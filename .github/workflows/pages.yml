@@ -1,0 +1,58 @@
+name: pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "viewer/**"
+      - "data/dataset.json"
+      - "data/regulation_layers.json"
+      - "data/regulation.pmtiles"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: viewer/package-lock.json
+      - run: npm ci
+        working-directory: viewer
+      - run: npm run build
+        working-directory: viewer
+      # dataset.json とレイヤー定義はビューワが実行時に読む。
+      # PMTiles は同梱できるサイズのときだけ載せる(1ファイル100MB制限)。
+      - name: data を配置
+        run: |
+          mkdir -p viewer/dist/data
+          cp data/dataset.json data/regulation_layers.json viewer/dist/data/
+          if [ -f data/regulation.pmtiles ]; then
+            cp data/regulation.pmtiles viewer/dist/data/
+          fi
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: viewer/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

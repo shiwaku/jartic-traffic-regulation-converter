@@ -1,0 +1,109 @@
+name: update-data
+
+# 毎月1日ごろ、対象月の約2か月後に新しい月が公開される。
+# 日次でカタログJSONを見て、対象年月が変わったときだけ取り込む。
+on:
+  schedule:
+    - cron: "17 21 * * *"   # 06:17 JST
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "品質ゲートを無視して反映する"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      has_new: ${{ steps.check.outputs.has_new }}
+      year_month: ${{ steps.check.outputs.year_month }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - id: check
+        run: |
+          set +e
+          python3 src/run_pipeline.py check
+          code=$?
+          set -e
+          if [ "$code" = "10" ] || [ "${{ inputs.force }}" = "true" ]; then
+            echo "has_new=true" >> "$GITHUB_OUTPUT"
+          elif [ "$code" = "0" ]; then
+            echo "has_new=false" >> "$GITHUB_OUTPUT"
+          else
+            exit $code
+          fi
+          echo "year_month=$(python3 src/catalog_month.py)" >> "$GITHUB_OUTPUT"
+
+  update:
+    needs: check
+    if: needs.check.outputs.has_new == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: tippecanoe を入れる
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential libsqlite8-dev zlib1g-dev || \
+          sudo apt-get install -y -qq build-essential libsqlite3-dev zlib1g-dev
+          git clone --depth 1 https://github.com/felt/tippecanoe /tmp/tippecanoe
+          make -C /tmp/tippecanoe -j"$(nproc)"
+          sudo make -C /tmp/tippecanoe install
+
+      - name: 生データを取得
+        run: python3 src/jartic_opendata_kisei_dl.py --out work/zip
+
+      # 品質ゲートより先に退避する。JARTIC は最新1か月しか配布せず、
+      # 過去月のURLは消える。ゲートに落ちても生データは残す。
+      - name: 生zipを Release へ退避
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="raw-${{ needs.check.outputs.year_month }}"
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --title "$TAG 生データ" \
+              --notes "JARTIC 交通規制情報の生zip。JARTIC は最新1か月分しか配布しないため退避したもの。"
+          gh release upload "$TAG" work/zip/*.zip work/zip/catalog.json --clobber
+
+      - name: パースとタイル生成、品質ゲート
+        run: |
+          ARGS=""
+          if [ "${{ inputs.force }}" = "true" ]; then ARGS="--force"; fi
+          python3 src/run_pipeline.py run $ARGS
+
+      - name: PMTiles を Release へ公開
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          IN_REPO=$(python3 -c "import json;print(json.load(open('data/dataset.json'))['pmtiles_in_repo'])")
+          if [ "$IN_REPO" = "False" ]; then
+            TAG="tiles-${{ needs.check.outputs.year_month }}"
+            gh release view "$TAG" >/dev/null 2>&1 || \
+              gh release create "$TAG" --title "$TAG タイル" --notes "交通規制情報の PMTiles。"
+            gh release upload "$TAG" work/regulation.pmtiles --clobber
+            gh release edit "$TAG" --latest
+          fi
+
+      - name: main を更新
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data README.md
+          git diff --cached --quiet && echo "変更なし" && exit 0
+          git commit -m "data: ${{ needs.check.outputs.year_month }} に更新"
+          git push

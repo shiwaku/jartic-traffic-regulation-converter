@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# 中間生成物(ダウンロードしたzip・展開したCSV・GeoJSONL・タイル)
+work/
+*.zip
+*.geojsonl
+
+# PMTiles は 90MB 以下のときだけ data/ に置く。それ以外は Release 配布
+work/*.pmtiles
+
+# viewer
+viewer/node_modules/
+viewer/dist/
+viewer/.env
