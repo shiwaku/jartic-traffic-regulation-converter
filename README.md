@@ -186,7 +186,9 @@ python3 src/build_tiles.py --work work --out work/regulation.pmtiles
 | サイズ | 配布 |
 |---|---|
 | 90MB 以下 | `data/regulation.pmtiles` としてリポジトリ同梱 |
-| 90MB 超 | Release アセット。ビューワは Range リクエストで読む |
+| 90MB 超 | Cloudflare R2(`shi-works`)へ固定パスで公開。ビューワは Range リクエストで読む |
+
+GitHub Release のアセットは CORS ヘッダーを返さずブラウザから読めないため使っていません。
 
 ### 生データのアーカイブ
 

@@ -130,7 +130,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     else:
         print(
             f"PMTiles が {size_mb}MB でリポジトリ上限({REPO_FILE_LIMIT_MB}MB)を超えた。\n"
-            f"work/regulation.pmtiles を Release アセットとして配布し、\n"
+            f"work/regulation.pmtiles を R2(shi-works) へ配布し、\n"
             f"ビューワは Range リクエストでそれを読む。",
             file=sys.stderr,
         )

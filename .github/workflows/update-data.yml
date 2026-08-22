@@ -86,17 +86,20 @@ jobs:
           if [ "${{ inputs.force }}" = "true" ]; then ARGS="--force"; fi
           python3 src/run_pipeline.py run $ARGS
 
-      - name: PMTiles を Release へ公開
+      # GitHub Release のアセットは CORS ヘッダーを返さず、ブラウザから pmtiles.js の
+      # Range フェッチができない。CORS 設定済みの R2(shi-works) に固定パスで上書き公開する。
+      - name: PMTiles を R2 へ公開
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
         run: |
           IN_REPO=$(python3 -c "import json;print(json.load(open('data/dataset.json'))['pmtiles_in_repo'])")
           if [ "$IN_REPO" = "False" ]; then
-            TAG="tiles-${{ needs.check.outputs.year_month }}"
-            gh release view "$TAG" >/dev/null 2>&1 || \
-              gh release create "$TAG" --title "$TAG タイル" --notes "交通規制情報の PMTiles。"
-            gh release upload "$TAG" work/regulation.pmtiles --clobber
-            gh release edit "$TAG" --latest
+            aws s3 cp work/regulation.pmtiles \
+              s3://shi-works/pmtiles/jartic-traffic-regulation-converter/regulation.pmtiles \
+              --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
+              --content-type application/octet-stream
           fi
 
       - name: main を更新

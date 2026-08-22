@@ -24,7 +24,7 @@ def replace_block(text: str, begin: str, end: str, body: str) -> str:
 
 
 def build_dataset_table(d: dict) -> str:
-    dist = "リポジトリ同梱" if d.get("pmtiles_in_repo") else "Release アセット(Range配信)"
+    dist = "リポジトリ同梱" if d.get("pmtiles_in_repo") else "R2配信(Range配信)"
     return "\n".join([
         "| 項目 | 内容 |",
         "|---|---|",
