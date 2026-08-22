@@ -380,6 +380,16 @@ body {
   background: transparent;
 }
 
+/* その月に収録が無いレイヤー。押しても何も出ないので操作させない */
+.reg-item.is-empty {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.reg-item.is-empty:hover {
+  background: transparent;
+}
+
 .reg-item:has(input:focus-visible) {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
@@ -467,16 +477,43 @@ body {
   font-weight: 700;
 }
 
+/* 交差点では複数のフィーチャが当たる。縦に積むのでスクロールは全体で持つ */
+.reg-popup .maplibregl-popup-content {
+  max-height: 52vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.popup-title .chip {
+  margin-right: 6px;
+  vertical-align: -2px;
+}
+
+.popup-layer {
+  margin-left: 6px;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+.popup-sep {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 9px 0;
+}
+
+.popup-more {
+  margin: 8px 0 0;
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+
 .popup-kv {
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 3px 10px;
   margin: 0;
   font-size: 11.5px;
-  /* 属性が多い規制があるため、伸びすぎたらポップアップ内でスクロールさせる */
-  max-height: 46vh;
-  overflow-y: auto;
-  overscroll-behavior: contain;
 }
 
 .popup-kv dt {

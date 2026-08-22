@@ -2,51 +2,64 @@ import maplibregl from 'maplibre-gl'
 import { Protocol } from 'pmtiles'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
-import { BASEMAPS, getBasemapStyle, type Basemap } from './basemap'
+import { getBasemapStyle, type Basemap } from './basemap'
+import { JAPAN_BOUNDS, LAYERS, MAX_ZOOM } from './config'
+import { loadDataset } from './dataset'
 import {
   BASE_OPACITY,
   buildLayers,
   idsOf,
-  JAPAN_BOUNDS,
-  LAYERS,
-  loadRegulation,
-  MAX_ZOOM,
-  MIN_ZOOM,
+  nameOf,
   OPACITY_PROP,
+  regulationSource,
   SOURCE_ID,
-  type Regulation,
 } from './regulation'
 import { applyThemeAttr, initialTheme, type Theme } from './theme'
+import { BasemapControl } from './ui/basemapControl'
+import { $, fatal } from './ui/dom'
+import { initLayerPanel } from './ui/layerPanel'
+import { renderMeta, renderZoom } from './ui/meta'
+import { showFeaturePopup } from './ui/popup'
+import { MAP_HASH_KEY, readState, writeState } from './urlstate'
 import './style.css'
 
-let theme: Theme = initialTheme()
-let base: Basemap = 'pale'
-applyThemeAttr(theme)
-
-const isMobile = window.matchMedia('(max-width: 640px)').matches
-
-const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T
+/**
+ * 画面の組み立て。ここは配線だけを持ち、
+ * 設定は config.ts、データは dataset.ts、部品は ui/ に置く。
+ */
 
 // ---- データ読み込み --------------------------------------------------------
-// PMTiles の所在が決まらないと地図に何も出ないため、地図を作る前に解決する。
+// dataset.json が PMTiles の配信URLの情報源なので、地図を作る前に解決する。
 
-let reg: Regulation
-try {
-  reg = await loadRegulation()
-} catch (e) {
-  const el = $('error')
-  el.hidden = false
-  el.textContent = e instanceof Error ? e.message : String(e)
+const dataset = await loadDataset().catch((e: unknown) => {
+  const msg = e instanceof Error ? e.message : String(e)
+  fatal(
+    `${msg}\n\nPMTiles の配信先はここに記録されているため、これが無いと地図を組み立てられません。`,
+  )
   throw e
-}
+})
 
 // 背景の最適化ベクトルタイルも PMTiles 配信なので、常に登録する。
 maplibregl.addProtocol('pmtiles', new Protocol().tile)
 
-const ds = reg.dataset
-/** 表示中のレイヤー名。 */
-const visible = new Set(Object.keys(LAYERS))
-let regOpacity = 1
+// ---- 表示状態 --------------------------------------------------------------
+// 位置は MapLibre が hash の map= に、表示レイヤー・不透明度・背景は urlstate が
+// 同じ hash の別キーに書く。テーマだけは端末の好みなので localStorage。
+
+const saved = readState()
+let theme: Theme = initialTheme()
+let base: Basemap = saved.base ?? 'pale'
+let regOpacity = saved.opacity ?? 1
+const visible = new Set(
+  saved.layers ??
+    Object.keys(LAYERS).filter((name) => (dataset.by_layer[name]?.n ?? 0) > 0),
+)
+applyThemeAttr(theme)
+
+const isMobile = window.matchMedia('(max-width: 640px)').matches
+const tileMaxZoom = dataset.tiles?.max_zoom ?? MAX_ZOOM
+
+const persist = (): void => writeState({ layers: visible, opacity: regOpacity, base })
 
 // ---- 地図 ------------------------------------------------------------------
 
@@ -57,10 +70,11 @@ const map = new maplibregl.Map({
   zoom: 10,
   minZoom: 4,
   // タイルの最大 ZL を超えても、位置合わせのため少し寄れるようにする
-  maxZoom: MAX_ZOOM + 4,
+  maxZoom: tileMaxZoom + 4,
   maxPitch: 85,
-  // 地図位置を URL の #ズーム/緯度/経度 に反映（共有・リロード時の位置維持）
-  hash: true,
+  // 位置を URL の #map=ズーム/緯度/経度 に反映（共有・リロード時の位置維持）。
+  // キー名を付けることで、表示レイヤーなど別のパラメータと共存できる。
+  hash: MAP_HASH_KEY,
   attributionControl: false,
   // モバイルはGPU/メモリが限られるため保持タイル数と描画解像度を絞る。
   // 逼迫すると WebGL コンテキストが失われ地図がまるごと消えるため、その圧を下げる。
@@ -84,6 +98,19 @@ map.addControl(
 map.addControl(new maplibregl.FullscreenControl(), 'top-right')
 map.addControl(new maplibregl.ScaleControl({ maxWidth: 200, unit: 'metric' }), 'bottom-left')
 map.addControl(new maplibregl.AttributionControl({ compact: true }))
+
+// 規制ソースが読めないと地図に何も出ない。理由を画面に出す（起動時の HEAD 確認は
+// 往復が増えるだけで、途中で配信が止まった場合を捕まえられないのでやらない）。
+let reportedSourceError = false
+map.on('error', (e) => {
+  const sourceId = (e as unknown as { sourceId?: string }).sourceId
+  if (sourceId !== SOURCE_ID || reportedSourceError) return
+  reportedSourceError = true
+  fatal(
+    `PMTiles を取得できませんでした。\n${dataset.pmtiles_url}\n\n` +
+      '配信元が停止しているか、ネットワークに到達できていません。',
+  )
+})
 
 // ---- 規制レイヤーの投入 ----------------------------------------------------
 // 背景スタイルを差し替えると全レイヤーが消えるため、切替のたびに貼り直す。
@@ -111,19 +138,18 @@ function labelAnchor(): string | undefined {
 const activeIds: string[] = []
 
 function addRegulationLayers(): void {
-  if (!map.getSource(SOURCE_ID)) map.addSource(SOURCE_ID, reg.source)
+  if (!map.getSource(SOURCE_ID)) map.addSource(SOURCE_ID, regulationSource(dataset))
 
   const before = labelAnchor()
   activeIds.length = 0
 
   for (const { id, spec } of buildLayers()) {
-    const name = id.replace(/-(fill|line|point)$/, '')
+    const name = nameOf(id)
     if (!map.getLayer(id)) {
       map.addLayer(
         {
           id,
           source: SOURCE_ID,
-          minzoom: MIN_ZOOM,
           ...spec,
           layout: { ...(spec.layout ?? {}), visibility: visible.has(name) ? 'visible' : 'none' },
           paint: {
@@ -169,205 +195,91 @@ collapseBtn.addEventListener('click', () => {
   renderCollapseBtn()
 })
 
-// ---- レイヤー一覧 ----------------------------------------------------------
+// ---- レイヤー・不透明度 ----------------------------------------------------
 
-function setVisible(name: string, on: boolean): void {
-  if (on) visible.add(name)
-  else visible.delete(name)
-  for (const id of idsOf(name)) {
-    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none')
+function applyVisibility(): void {
+  for (const name of Object.keys(LAYERS)) {
+    const on = visible.has(name)
+    for (const id of idsOf(name)) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none')
+    }
   }
 }
 
-function buildLayerList(): void {
-  const host = $('layers')
-  host.innerHTML = ''
-  for (const [name, spec] of Object.entries(LAYERS)) {
-    const n = ds?.by_layer?.[name]?.n
-    const row = document.createElement('label')
-    row.className = 'reg-item'
-    row.innerHTML =
-      `<input type="checkbox" checked data-layer="${name}" />` +
-      `<span class="chip" style="--chip:${spec.color}"></span>` +
-      `<span class="reg-label">${spec.label}</span>` +
-      `<span class="reg-n">${n != null ? n.toLocaleString() : ''}</span>`
-    host.append(row)
-  }
-  host.querySelectorAll<HTMLInputElement>('input[data-layer]').forEach((el) => {
-    el.addEventListener('change', () => setVisible(el.dataset.layer!, el.checked))
-  })
-
-  const setAll = (on: boolean): void => {
-    host.querySelectorAll<HTMLInputElement>('input[data-layer]').forEach((el) => {
-      el.checked = on
-      setVisible(el.dataset.layer!, on)
-    })
-  }
-  $<HTMLButtonElement>('all-on').addEventListener('click', () => setAll(true))
-  $<HTMLButtonElement>('all-off').addEventListener('click', () => setAll(false))
-}
-
-// ---- 不透明度 --------------------------------------------------------------
-const opacityRange = $<HTMLInputElement>('opacity-range')
-const opacityVal = $('opacity-val')
-opacityRange.addEventListener('input', () => {
-  regOpacity = Number(opacityRange.value)
-  opacityVal.textContent = `${Math.round(regOpacity * 100)}%`
+function applyOpacity(): void {
   for (const id of activeIds) {
     const layer = map.getLayer(id)
     if (!layer) continue
     const prop = OPACITY_PROP[layer.type]
     if (prop) map.setPaintProperty(id, prop, BASE_OPACITY[layer.type] * regOpacity)
   }
+}
+
+initLayerPanel(dataset, visible, regOpacity, {
+  onVisibleChange: (next) => {
+    visible.clear()
+    for (const n of next) visible.add(n)
+    applyVisibility()
+    persist()
+  },
+  onOpacityChange: (v) => {
+    regOpacity = v
+    applyOpacity()
+    persist()
+  },
+  onFit: () => map.fitBounds(JAPAN_BOUNDS, { padding: 24 }),
 })
 
-// ---- 全国表示 --------------------------------------------------------------
-$<HTMLButtonElement>('fit-btn').addEventListener('click', () =>
-  map.fitBounds(JAPAN_BOUNDS, { padding: 24 }),
-)
-
 // ---- 背景地図スイッチャー（右下） ------------------------------------------
-class BasemapControl implements maplibregl.IControl {
-  private el!: HTMLElement
-  onAdd(): HTMLElement {
-    this.el = document.createElement('div')
-    this.el.className = 'maplibregl-ctrl basemap-switch'
-    for (const { key, label } of BASEMAPS) {
-      const btn = document.createElement('button')
-      btn.type = 'button'
-      btn.textContent = label
-      btn.dataset.base = key
-      btn.setAttribute('aria-selected', String(key === base))
-      btn.addEventListener('click', () => setBase(key))
-      this.el.append(btn)
-    }
-    return this.el
-  }
-  onRemove(): void {
-    this.el.remove()
-  }
-  sync(): void {
-    for (const btn of this.el.querySelectorAll<HTMLButtonElement>('button')) {
-      btn.setAttribute('aria-selected', String(btn.dataset.base === base))
-    }
-  }
-}
-const basemapCtrl = new BasemapControl()
+const basemapCtrl = new BasemapControl(
+  () => base,
+  (next) => {
+    if (next === base) return
+    base = next
+    basemapCtrl.sync()
+    persist()
+    void reloadStyle()
+  },
+)
 map.addControl(basemapCtrl, 'bottom-right')
 
-function setBase(next: Basemap): void {
-  if (next === base) return
-  base = next
-  basemapCtrl.sync()
-  void reloadStyle()
-}
-
 // ---- ズームレベル表示 ------------------------------------------------------
-const zoomBadge = $('zoom-badge')
-const zoomNote = $('zoom-note')
-const renderZoom = (): void => {
-  const z = map.getZoom()
-  zoomBadge.textContent = `Z${z.toFixed(1)}`
-  zoomNote.textContent =
-    z < MIN_ZOOM
-      ? `規制は Z${MIN_ZOOM} 以上で表示されます（低ズームでは密度が高く潰れるため）`
-      : z > MAX_ZOOM + 0.5
-        ? `タイルの最大ZL（Z${MAX_ZOOM}）を超えています。引き伸ばし表示です`
-        : `規制の収録範囲は Z${MIN_ZOOM}–Z${MAX_ZOOM}`
-}
-map.on('zoom', renderZoom)
+map.on('zoom', () => renderZoom(map.getZoom(), tileMaxZoom))
 
 // ---- クリックで属性表示 ----------------------------------------------------
-
-const PROP_LABEL: Record<string, string> = {
-  kind: '規制種別',
-  code: '共通規制種別コード',
-  shape_name: '規制形態',
-  pref: '都道府県コード',
-  police: '警察署コード',
-  route: '路線名',
-  crossing: '交差点名称',
-  road_type: '道路種別',
-  speed: '速度',
-  zone30: 'ゾーン30',
-  n_lanes: '車両通行帯数',
-  length: '距離・延長',
-  area: '面積',
-  side: '片側・両側',
-  n_stoplines: '停止線本数',
-  has_signal: '信号の有無',
-  dir_kind: '指定・禁止方向の別',
-  dir_in: '進入方向',
-  dir_deny: '禁止する方向',
-  dir_allow: '指定する方向',
-  t1_from: '規制時間 開始',
-  t1_to: '規制時間 終了',
-  dow1: '規制曜日',
-  veh1: '対象車両',
-  reason: '規制理由',
-  updated: 'データ更新日',
-  uid: 'ユニークキー',
-}
-
-/** 属性値は元データ由来なので、そのまま innerHTML に入れない。 */
-const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
 const hitLayers = (): string[] => activeIds.filter((id) => map.getLayer(id))
 
 map.on('click', (e) => {
   const ids = hitLayers()
   if (!ids.length) return
-  const hits = map.queryRenderedFeatures(e.point, { layers: ids })
-  if (!hits.length) return
-  const p = hits[0].properties as Record<string, unknown>
-  const rows = Object.entries(PROP_LABEL)
-    .filter(([k]) => p[k] !== undefined && p[k] !== '')
-    .map(([k, label]) => `<dt>${label}</dt><dd>${esc(String(p[k]))}</dd>`)
-    .join('')
-  new maplibregl.Popup({ maxWidth: '320px' })
-    .setLngLat(e.lngLat)
-    .setHTML(
-      `<p class="popup-title">${esc(String(p.kind ?? '規制'))}</p>` +
-        `<dl class="popup-kv">${rows}</dl>`,
-    )
-    .addTo(map)
+  showFeaturePopup(map, e.lngLat, map.queryRenderedFeatures(e.point, { layers: ids }))
 })
 
 // レイヤーは背景切替のたびに貼り直されるため、レイヤー指定の mouseenter ではなく
 // 地図全体の mousemove で判定する（登録が古いレイヤーに残らないようにする）。
+// 13レイヤーへの当たり判定を毎イベント走らせると重いので、フレームに1回に間引く。
+let hoverQueued = false
 map.on('mousemove', (e) => {
-  const ids = hitLayers()
-  const hit = ids.length > 0 && map.queryRenderedFeatures(e.point, { layers: ids }).length > 0
-  map.getCanvas().style.cursor = hit ? 'pointer' : ''
+  if (hoverQueued) return
+  hoverQueued = true
+  requestAnimationFrame(() => {
+    hoverQueued = false
+    const ids = hitLayers()
+    const hit = ids.length > 0 && map.queryRenderedFeatures(e.point, { layers: ids }).length > 0
+    map.getCanvas().style.cursor = hit ? 'pointer' : ''
+  })
 })
 
-// ---- データ情報 ------------------------------------------------------------
-function renderMeta(): void {
-  if (!ds) {
-    $('meta').innerHTML = '<dt>状態</dt><dd>dataset.json 未生成</dd>'
-    return
-  }
-  const rows: [string, string][] = [
-    ['対象年月', ds.target_month],
-    ['公開日', `${ds.release_day}（JARTIC）`],
-    ['都道府県', `${ds.n_prefectures} / 47`],
-    ['レコード', ds.rows_total.toLocaleString()],
-    ['フィーチャ', ds.features_total.toLocaleString()],
-    ['形状異常', ds.anomalies_total.toLocaleString()],
-    ['PMTiles', `${ds.pmtiles_mb} MB（${reg.isLocal ? '同梱' : 'R2 配信'}）`],
-  ]
-  $('meta').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')
-}
-
 // ---- 初期化 ----------------------------------------------------------------
-if (ds) $('subtitle').textContent = ds.target_month
+$('subtitle').textContent = dataset.target_month
 $('build-ver').textContent = `build: ${__BUILD_TIME__}`
 renderThemeBtn()
-buildLayerList()
-renderMeta()
-renderZoom()
+renderMeta(dataset)
+renderZoom(map.getZoom(), tileMaxZoom)
 if (isMobile) panel.classList.add('collapsed')
 renderCollapseBtn()
+persist()
 
 map.on('load', addRegulationLayers)
 
