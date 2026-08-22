@@ -1,0 +1,43 @@
+name: tests
+
+# 無人でデータを公開するので、品質ゲートとパースはここで押さえる。
+# 実データ(320MB)も tippecanoe も要らない。
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # 手元は WSL2(Linux)、CI も Linux。Windows は「動く前提にしない」が、
+        # テストが通るかは見ておく(csv.field_size_limit のような差がある)。
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m unittest discover -s tests -v
+
+  viewer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: viewer/package-lock.json
+      - run: npm ci
+        working-directory: viewer
+      # npm run build は tsc --noEmit を含む
+      - run: npm run build
+        working-directory: viewer
