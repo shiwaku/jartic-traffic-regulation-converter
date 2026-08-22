@@ -21,6 +21,15 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+# 進捗を日本語で出すので、端末のコードページに関係なく UTF-8 で書く
+# (cp1252 の環境では UnicodeEncodeError で処理が落ちる)。
+# このスクリプトは単体で動く前提を保つため、src/config.py には依存しない。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError, OSError):
+        pass
+
 CATALOG_URL = "https://www.jartic.or.jp/d/opendata/opendata.json"
 BASE_URL = "https://www.jartic.or.jp/d/opendata"
 TARGET_TYPE = "typeD"

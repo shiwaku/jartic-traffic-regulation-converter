@@ -16,7 +16,18 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
+
+# 進捗やレポートを日本語で出すので、端末のコードページに関係なく UTF-8 で書く。
+# Windows の既定は環境によって cp932 や cp1252 になり、cp1252 では
+# UnicodeEncodeError で処理そのものが落ちる(GitHub の Windows ランナーで発生)。
+# このモジュールは各スクリプトが必ず読むので、ここで一度だけ直す。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+    except (AttributeError, ValueError, OSError):
+        pass
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"

@@ -8,6 +8,7 @@ parse_report.json)を通す。tippecanoe は要らない。
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -156,6 +157,31 @@ class TestEndToEnd(unittest.TestCase):
         # tippecanoe が空ファイルで落ちるため消している
         self.assertFalse((self.work / "regulation_bicycle.geojsonl").exists())
         self.assertNotIn("bicycle", self.report["by_layer"])
+
+
+class TestConsoleEncoding(unittest.TestCase):
+    """端末のコードページに関係なく走ること。
+
+    進捗やレポートを日本語で出しているため、cp1252 の環境では
+    print が UnicodeEncodeError を投げて処理そのものが落ちていた
+    (GitHub の Windows ランナーで発生)。
+    """
+
+    def test_cp1252の環境でもパースが通る(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            zip_dir = work / "zip"
+            zip_dir.mkdir()
+            with zipfile.ZipFile(zip_dir / "typeD_test.zip", "w") as z:
+                z.writestr("交通規制情報.csv", csv_text().encode("cp932"))
+            env = {**os.environ, "PYTHONIOENCODING": "cp1252"}
+            r = subprocess.run(
+                [sys.executable, "src/parse_regulation.py",
+                 "--zip-dir", str(zip_dir), "--out", str(work)],
+                cwd=ROOT, capture_output=True, text=True, env=env,
+            )
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertTrue((work / "parse_report.json").exists())
 
 
 class TestMemberName(unittest.TestCase):
