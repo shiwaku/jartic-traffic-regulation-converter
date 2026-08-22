@@ -20,11 +20,12 @@ const LAYERS = (layerDef as { layers: Record<string, LayerSpec> }).layers
 const POINT_LAYERS = new Set(['stop', 'stopline', 'signal', 'crosswalk', 'turn_restrict'])
 const MIN_ZOOM = 9
 
-// PMTiles は data/ 同梱を第一候補にし、無ければ Release アセットへ落とす。
+// PMTiles は data/ 同梱を第一候補にし、無ければ R2 へ落とす。
 // 全国分は 100MB を超えるため Git に置けない（run_pipeline がサイズで切り替える）。
+// GitHub Release のアセットは CORS ヘッダーを返さずブラウザから読めないため使わない。
 const PMTILES_LOCAL = 'data/regulation.pmtiles'
-const PMTILES_RELEASE =
-  'https://github.com/shiwaku/jartic-traffic-regulation-converter/releases/latest/download/regulation.pmtiles'
+const PMTILES_R2 =
+  'https://shi-works.com/pmtiles/jartic-traffic-regulation-converter/regulation.pmtiles'
 
 const protocol = new pmtiles.Protocol()
 maplibregl.addProtocol('pmtiles', protocol.tile)
@@ -103,7 +104,7 @@ const radius: ExpressionSpecification = [
 ]
 
 map.on('load', async () => {
-  const url = (await head(PMTILES_LOCAL)) ? PMTILES_LOCAL : PMTILES_RELEASE
+  const url = (await head(PMTILES_LOCAL)) ? PMTILES_LOCAL : PMTILES_R2
   map.addSource('reg', { type: 'vector', url: `pmtiles://${url}` })
 
   const interactive: string[] = []
