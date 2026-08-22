@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="全国交通規制マップ">
+  <rect width="512" height="512" rx="96" fill="#c1571f"/>
+  <!-- 交差点の道路 -->
+  <g stroke="#f6d9c6" stroke-width="26" opacity="0.55">
+    <path d="M256 96 V416"/>
+    <path d="M96 256 H416"/>
+  </g>
+  <!-- 一時停止（八角形の規制標識） -->
+  <path d="M203 148 h106 l53 53 v106 l-53 53 h-106 l-53 -53 v-106 z"
+        fill="#ffffff" stroke="#8f3c12" stroke-width="14"/>
+  <rect x="196" y="243" width="120" height="26" rx="6" fill="#c1571f"/>
+</svg>

@@ -64,7 +64,17 @@ function dataDevServer(): Plugin {
 export default defineConfig({
   base: './',
   plugins: [dataDevServer()],
-  server: { port: 8001 },
+  server: {
+    port: 8001,
+    strictPort: true,
+    // WSL から /mnt/c（Windows 側）のファイルを見る構成では inotify イベントが
+    // 届かず、書き換えても dev サーバが古い結果を返し続ける。ポーリングで検知する。
+    watch: { usePolling: true, interval: 300 },
+  },
+  build: {
+    // main.ts がトップレベル await を使う（地図を作る前に PMTiles の所在を解決するため）
+    target: 'es2022',
+  },
   define: {
     __BUILD_TIME__: JSON.stringify(
       new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC',

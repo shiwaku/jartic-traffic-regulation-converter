@@ -217,7 +217,18 @@ python3 src/mirror_archive.py --from-work  # 手元の work/ から取り込む
 cd viewer && npm install && npm run dev
 ```
 
-MapLibre GL JS + PMTiles。背景は国土地理院タイル。レイヤーの表示切替、規制種別での絞り込み、フィーチャのクリックで属性表示。
+MapLibre GL JS + PMTiles。[aerial-photo-tile-pipeline](https://github.com/shiwaku/aerial-photo-tile-pipeline/tree/main/viewer) のビューワをベースにしています。
+
+| 機能 | 内容 |
+|---|---|
+| 背景地図 | 淡色・標準（地理院 最適化ベクトルタイル）／写真（全国最新写真）／白図 を右下で切替 |
+| テーマ | ライト・ダーク切替（ダークは背景スタイルの色を明度反転して生成） |
+| 規制レイヤー | 13 種を個別に表示切替、全ON／全OFF、不透明度スライダー |
+| 重ね順 | 規制は背景の注記（地名・道路番号）より下に差し込むため、ラベルが隠れない |
+| 属性表示 | フィーチャをクリックでポップアップ |
+| その他 | 現在地・全画面・スケール、URL ハッシュで位置共有、PWA 対応、WebGL コンテキスト消失からの自動復帰 |
+
+規制は Z9 以上で表示されます（低ズームでは密度が高く潰れるため）。タイルの収録は Z14 まで。
 
 ## 出典
 
