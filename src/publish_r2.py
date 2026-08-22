@@ -95,9 +95,15 @@ def copy_latest_to_month(ym: str, dry: bool) -> int:
     if dry:
         print(f"[dry-run] copy {config.latest_key()} -> {key} ({size:,} bytes)")
         return size
-    aws(["s3", "cp", f"s3://{config.R2_BUCKET}/{config.latest_key()}",
-         f"s3://{config.R2_BUCKET}/{key}",
-         "--content-type", "application/octet-stream", "--cache-control", MONTH_CACHE])
+    # `aws s3 cp` のバケット間コピーは GetObjectTagging を呼ぶが、R2 はこれを
+    # 実装していない(NotImplemented)。タグを触らない copy-object を使う。
+    # メタデータは引き継がずここで付け直す(--metadata-directive REPLACE)。
+    aws(["s3api", "copy-object",
+         "--bucket", config.R2_BUCKET, "--key", key,
+         "--copy-source", f"{config.R2_BUCKET}/{config.latest_key()}",
+         "--metadata-directive", "REPLACE",
+         "--content-type", "application/octet-stream",
+         "--cache-control", MONTH_CACHE], capture=True)
     got = remote_size(key)
     if got != size:
         raise SystemExit(f"複製後のサイズが合わない: {key} ({got} != {size})")

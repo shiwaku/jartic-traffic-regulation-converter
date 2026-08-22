@@ -20,13 +20,16 @@ export type Dataset = {
   pmtiles_url: string
   /** R2 配信時のみ。dataset.json を読まない利用者向けの「常に最新」の口。 */
   pmtiles_latest_url?: string
-  /** 実際に収録されたズーム域。古い dataset.json には無い。 */
+  /**
+   * 実際に収録されたズーム域。設定ではなく「この配信物の事実」。
+   * 古い dataset.json には無い、または一部しか無い。
+   */
   tiles?: {
     min_zoom: number
     max_zoom: number
     max_tile_bytes: number
-    n_layers: number
-    tippecanoe_version: string
+    n_layers?: number
+    tippecanoe_version?: string
   }
   by_layer: Record<string, { label: string; n: number }>
 }
