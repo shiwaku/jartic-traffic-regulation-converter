@@ -111,5 +111,7 @@
   "n_prefectures": 47,
   "anomalies_total": 357583,
   "pmtiles_mb": 567.4,
-  "pmtiles_in_repo": false
+  "pmtiles_in_repo": false,
+  "pmtiles_url": "https://shi-works.com/pmtiles/jartic-traffic-regulation-converter/regulation.pmtiles",
+  "pmtiles_latest_url": "https://shi-works.com/pmtiles/jartic-traffic-regulation-converter/regulation.pmtiles"
 }

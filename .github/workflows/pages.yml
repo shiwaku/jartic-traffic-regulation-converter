@@ -1,15 +1,30 @@
 name: pages
 
 on:
+  # update-data がデータを更新したあとに呼ぶ。
+  # ref を渡すのは、呼び出し元の run が「更新前のコミット」に紐づいているため。
+  # ここで指定しないと actions/checkout は古い dataset.json を配信してしまう。
+  workflow_call:
+    inputs:
+      ref:
+        description: "配信するコミット(既定は呼び出し元のトリガー commit)"
+        type: string
+        required: false
+        default: ""
+  workflow_dispatch:
+  # 人が push したときは従来どおり発火する。
+  # (github-actions[bot] の push では push イベントが発火しないので、
+  #  自動更新の配信は上の workflow_call が担う)
   push:
     branches: [main]
     paths:
       - "viewer/**"
       - "data/dataset.json"
       - "data/regulation_layers.json"
+      - "data/attributes.json"
+      - "data/pipeline.json"
       - "data/regulation.pmtiles"
       - ".github/workflows/pages.yml"
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -23,8 +38,13 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - name: 配信するコミットを出す
+        run: git log -1 --format='%H %s'
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -34,15 +54,17 @@ jobs:
         working-directory: viewer
       - run: npm run build
         working-directory: viewer
-      # dataset.json とレイヤー定義はビューワが実行時に読む。
+      # dataset.json はビューワが実行時に読む(PMTiles の配信URLの情報源)。
+      # attributes.json / regulation_layers.json / pipeline.json はビルド時に
+      # バンドルされるので配置しない。
       # PMTiles は同梱できるサイズのときだけ載せる(1ファイル100MB制限)。
       - name: data を配置
         run: |
+          set -euo pipefail
           mkdir -p viewer/dist/data
-          cp data/dataset.json data/regulation_layers.json viewer/dist/data/
-          if [ -f data/regulation.pmtiles ]; then
-            cp data/regulation.pmtiles viewer/dist/data/
-          fi
+          cp data/dataset.json viewer/dist/data/
+          if [ -f data/history.json ]; then cp data/history.json viewer/dist/data/; fi
+          if [ -f data/regulation.pmtiles ]; then cp data/regulation.pmtiles viewer/dist/data/; fi
       - uses: actions/upload-pages-artifact@v3
         with:
           path: viewer/dist
