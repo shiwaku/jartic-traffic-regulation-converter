@@ -15,7 +15,7 @@
 | レコード数 | 4,395,720件 |
 | 地図に載るフィーチャ数 | 4,389,367件 |
 | 形状異常 | 357,583件（data/parse_report.json に内訳） |
-| PMTiles | 567.4MB（Release アセット(Range配信)） |
+| PMTiles | 567.4MB（R2配信(Range配信)） |
 <!-- dataset:end -->
 
 ### レイヤー
@@ -136,16 +136,34 @@
 毎月1日ごろ、対象月の約2か月後に新しい月が公開されます。GitHub Actions の [update-data](.github/workflows/update-data.yml) が**日次でカタログJSONを見て、対象年月が変わったときだけ**取り込みを走らせます。
 
 ```
-カタログ確認 → 生zipを退避 → パース・PMTiles生成 → 品質ゲート → Release公開 → main更新 → Pages配信
+カタログ確認 → 生zipを Release へ退避 → パース・PMTiles生成 → 品質ゲート → R2公開 → main更新 → Pages配信
 ```
 
 配布URLは月次で変わる（`.../opendata/{更新日時}/typeD_{都道府県ローマ字}.zip`）ため、更新日時や対象年月はスクリプトに埋め込まず[公式のカタログJSON](https://www.jartic.or.jp/d/opendata/opendata.json)から解決します。
 
 ### 手元で実行する
 
+依存は Python 3.12 標準ライブラリと [tippecanoe](https://github.com/felt/tippecanoe) のみです。
+
+**tippecanoe には Windows 向けの配布がありません。手元では WSL2 の中で実行してください。** CI も Linux なので、これで CI と同じ経路になります。
+
 ```bash
-python3 src/run_pipeline.py check      # 新しい月が出ているかだけ見る
-python3 src/run_pipeline.py run        # 取得から PMTiles 生成まで通す
+# 実行できる環境か先に確かめる（tippecanoe の在処・版、ディスクの空き、設定ファイル）
+python3 src/run_pipeline.py doctor
+
+python3 src/run_pipeline.py check               # 新しい月が出ているかだけ見る
+python3 src/run_pipeline.py run                 # 取得から data/ 反映まで通す
+python3 src/run_pipeline.py run --reuse         # work/ にある成果物は作り直さない
+python3 src/run_pipeline.py run --skip-download # 取得済みの work/zip を使う（CIと同じ経路）
+```
+
+終了コードは 0 正常 / 10 新しい月がある（`check`）/ 20 品質ゲートで停止 / 30 環境不備。
+
+**中間生成物は `JARTIC_WORK_DIR` で置き場所を変えられます。** 全国分で zip 320MB・中間 GeoJSONL 約1.6GB・PMTiles 約0.2GB になるため、WSL2 から `/mnt/c` のリポジトリを触る構成では、work だけ Linux 側（ext4）へ逃がしてください。drvfs 越しの読み書きは桁で遅くなります。
+
+```powershell
+# Windows から WSL2 の中で通す（work は WSL 側の ext4 に置く）
+wsl.exe bash -lc "cd /mnt/c/path/to/jartic-traffic-regulation-converter && JARTIC_WORK_DIR=~/jartic-work python3 src/run_pipeline.py run"
 ```
 
 `run` は品質ゲートを通ったときだけ `data/` を書き換えます。個別に実行する場合:
@@ -154,21 +172,19 @@ python3 src/run_pipeline.py run        # 取得から PMTiles 生成まで通す
 # 1. 交通規制情報（typeD）を47都道府県分ダウンロード（約320MB）
 python3 src/jartic_opendata_kisei_dl.py --out work/zip
 
-# 特定県だけ見たいとき（カタログIDで絞る。R01=北海道）
-python3 src/jartic_opendata_kisei_dl.py --out work/zip --only R01
+# 特定県だけ見たいとき（カタログIDで絞る。R01=北海道 / R13=東京）
+python3 src/jartic_opendata_kisei_dl.py --out work/zip --only R01 R13
 
 # 2. 行区切りGeoJSON に変換（zipを展開せずストリーム処理）
 python3 src/parse_regulation.py --zip-dir work/zip --out work
 
-# 3. PMTiles を生成
-python3 src/build_tiles.py --work work --out work/regulation.pmtiles
+# 3. PMTiles を生成（ズーム域・属性は data/ の設定から読む）
+python3 src/build_tiles.py --work work
 ```
-
-依存は Python 3.9+ 標準ライブラリと [tippecanoe](https://github.com/felt/tippecanoe) のみです。中間ファイルは `work/` に出力され、リポジトリには含まれません。
 
 ### 品質ゲート
 
-人のレビューを挟まずに公開するため、前回の結果と比べて次のいずれかに当たると公開を止めます。
+人のレビューを挟まずに公開するため、前回の結果と比べて次のいずれかに当たると公開を止め、Issue を立てます。
 
 | 判定 | 内容 |
 |---|---|
@@ -179,6 +195,25 @@ python3 src/build_tiles.py --work work --out work/regulation.pmtiles
 
 しきい値は `src/run_pipeline.py run --max-feature-drop` で変えられます。
 
+品質ゲート落ちだけでなく、**取得の失敗・タイル生成の失敗・R2 への公開失敗もすべて Issue になります**（`data-update-failure` ラベル）。日次で走るので、同じ失敗が続いたときは新しい Issue を立てずに既存へコメントを足します。
+
+### タイルの作り方
+
+生成パラメータは実測で決めています。北海道（R01）と東京（R13）の2県＝全国の15.8%で測った結果:
+
+| 設定 | 2県のサイズ | 生成時間 | 全国換算 |
+|---|---|---|---|
+| `-Z0 -z14`・全属性（旧） | 98.2MB | 67秒 | 567MB（実測値） |
+| `-Z9 -z14`・全属性 | 73.4MB | 27秒 | 約424MB |
+| **`-Z9 -z14`・`uid` を外す（現在）** | **37.4MB** | **21秒** | **約216MB** |
+| `-Z9 -z14`・表示に必要な9属性だけ | 32.3MB | 22秒 | 約187MB |
+
+**ビューワは Z9 未満を描かないのに、Z0〜8 のタイルを作っていました。** 表示に効かないまま全体の25%と生成時間の60%を使っていたので、収録範囲を表示開始ズームに揃えました。
+
+**`uid`（ユニークキー）1属性でタイルの48%を食っていました。** フィーチャごとに一意な文字列は MVT の辞書圧縮が効かないためです。地図の上で人が読む値でもないので外しました。`uid` は生zipと中間 GeoJSONL には残るので、元データへの追跡性は失われません。交差点名称・路線名は「どこの規制か」を読むのに要るので残しています（外しても3.7MBしか減りません）。
+
+**タイルサイズ上限（`--maximum-tile-bytes`）は付けていません。** 上限を付けるとフィーチャが間引かれ、最大ズームまで寄っても規制が出てこなくなります。しかも効果は属性ダイエットに負けます（上限あり・全属性 50.8MB ＞ 上限なし・`uid` 抜き 37.4MB）。上限なしでも最大タイルは1.32MB、14,070枚のうち 500KB を超えるのは6枚だけでした。
+
 ### PMTiles の配布先
 
 全国分は 100MB を超えるため、Git に置けません（GitHub の1ファイル上限）。`src/run_pipeline.py` はサイズを見て自動で切り替えます。
@@ -186,9 +221,43 @@ python3 src/build_tiles.py --work work --out work/regulation.pmtiles
 | サイズ | 配布 |
 |---|---|
 | 90MB 以下 | `data/regulation.pmtiles` としてリポジトリ同梱 |
-| 90MB 超 | Cloudflare R2(`shi-works`)へ固定パスで公開。ビューワは Range リクエストで読む |
+| 90MB 超 | Cloudflare R2(`shi-works`)へ公開。ビューワは Range リクエストで読む |
+
+R2 へは月次キーと latest キーの**2本**を置きます。月次キーは上書きしないので、過去月のタイルをあとから引けます。
+
+```
+https://shi-works.com/pmtiles/jartic-traffic-regulation-converter/{年月}/regulation.pmtiles  # 不変
+https://shi-works.com/pmtiles/jartic-traffic-regulation-converter/regulation.pmtiles         # latest
+```
+
+**ビューワが読むのは月次キーです。** PMTiles は1ファイルを Range リクエストで細切れに読むため、latest を読ませると月次の差し替えと再生が重なったときに新旧のバイト列をまたいで取得してしまい、タイルが壊れます。月次キーは一度書いたら動かないので、その事故が起きません。あわせて `immutable` を付けているため、ブラウザは一度取った範囲を再検証しません。latest キーは `dataset.json` を読まない利用者向けの口として置いています。
+
+書き込みは月次キー → latest の順で、それぞれアップロード後にサイズを検証します。月次キーの検証が通らなければ latest には触らず、`data/` のコミットもしないので、公開中のビューワは前月の月次キー（消えない）を読み続けます。
+
+**`data/dataset.json` のコミットは R2 への公開が済んだあとに行います。** この順序が「`dataset.json` が指す URL は必ず存在する」という約束を成り立たせています。
+
+月次キーは**直近12か月**を残し、それより古いものは公開時に削除します（月あたり約0.2GB）。残っている月は [`data/history.json`](data/history.json) にバケットの実際の状態から書き出します。保持月数は [`data/pipeline.json`](data/pipeline.json) の `r2.keep_months`。
+
+```bash
+python3 src/publish_r2.py            # 月次キー → latest の順に公開し、古い月を剪定
+python3 src/publish_r2.py --dry-run  # 何をするかだけ出す
+python3 src/publish_r2.py --copy-latest  # 手元に PMTiles が無いとき、R2 上の latest を月次キーへ複製
+```
+
+`dataset.json` には `pmtiles_bytes` と `pmtiles_sha256` も入るので、配布物が壊れていないか利用側で確かめられます。
+
+**配信URLは [`data/dataset.json`](data/dataset.json) の `pmtiles_url` が単一の情報源**で、ビューワはそこを読みます。配布先を変えてもビューワのコードは触りません。
 
 GitHub Release のアセットは CORS ヘッダーを返さずブラウザから読めないため使っていません。
+
+### 更新したデータを確実に配信する
+
+`update-data` は `data/` を更新したあと [pages](.github/workflows/pages.yml) を**明示的に呼び、配信するコミットを `ref` で渡します**。
+
+- `github-actions[bot]` の push では `push` トリガーが発火しない（GitHub の仕様）
+- 呼び出された側の `actions/checkout` は、既定では**呼び出し元の run のコミット＝更新前**を取る
+
+この2つが重なると、データを更新しても Pages には前月のままの `dataset.json` が載り続けます。`ref` に push 後の SHA を渡すことでそこを塞いでいます。
 
 ### 生データのアーカイブ
 
@@ -200,16 +269,44 @@ python3 src/mirror_archive.py --from-work  # 手元の work/ から取り込む
 # 既定の保存先は ../jartic-archive/{年月}/（環境変数 JARTIC_ARCHIVE_DIR で変更可）
 ```
 
+## 設定
+
+**同じ値を2か所に書かないため、設定は `data/` の JSON が単一の情報源です。** Python（`src/config.py`）・ビューワ（`viewer/src/config.ts`）・GitHub Actions のどれもここを読みます。
+
+| ファイル | 内容 | 読む側 |
+|---|---|---|
+| [`data/pipeline.json`](data/pipeline.json) | ズーム域、タイルサイズ上限、同梱の上限MB、R2 の配信先と保持月数、tippecanoe のピン留め版 | Python / ビューワ / CI |
+| [`data/attributes.json`](data/attributes.json) | タイルに載せる属性（元CSVの列名・タイル上のキー・ポップアップでの表示名） | Python / ビューワ |
+| [`data/regulation_layers.json`](data/regulation_layers.json) | 規制種別コード → 表示レイヤーと色 | Python / ビューワ |
+
+属性を増減するときは `data/attributes.json` だけを直します。パース時に載せる属性とポップアップに出す属性が同じ表から来るので、片方だけ変わることがありません。
+
 ## 各スクリプトの役割
 
 | スクリプト | 役割 |
 |---|---|
 | `src/jartic_opendata_kisei_dl.py` | カタログJSONから最新の交通規制情報を解決して47都道府県分ダウンロード |
 | `src/parse_regulation.py` | CSVをストリーム処理し、レイヤーごとの行区切りGeoJSONと品質レポートを出力 |
-| `src/build_tiles.py` | 行区切りGeoJSONから PMTiles を1本生成（tippecanoe） |
-| `src/run_pipeline.py` | 上記を1コマンドで通し、品質ゲートを通ったものだけを `data/` に反映 |
+| `src/build_tiles.py` | 行区切りGeoJSONから PMTiles を1本生成（tippecanoe）。何で作ったかを `tiles_report.json` に残す |
+| `src/run_pipeline.py` | 上記を1コマンドで通す。環境チェック（`doctor`）と品質ゲートを持つ |
+| `src/publish_r2.py` | PMTiles を R2 の月次キーと latest へ公開し、古い月を剪定 |
+| `src/archive_raw.py` | 生zipを `raw-YYYYMM` の Release へ退避 |
 | `src/mirror_archive.py` | 生zipと成果物を月ごとのローカルアーカイブへ取り込む |
 | `src/update_docs.py` | `dataset.json` から README の収録データ節を生成 |
+| `src/config.py` | `data/` の設定JSONの読み口とパス |
+| `src/dataset.py` | `data/dataset.json` の組み立てと読み書き |
+| `src/gate.py` | 品質ゲートの判定 |
+| `src/ci.py` | GitHub Actions への出力（step output / 実行サマリ） |
+
+## テスト
+
+```bash
+python -m unittest discover -s tests
+```
+
+実データは320MBあるので CI では回せません。代わりに「実データで踏んだ罠」を数十行に詰めた **cp932 の合成zip** を作って、同じ経路（zipをストリーム読み → GeoJSONL → `parse_report.json`）を通します。tippecanoe は要りません。
+
+押さえているのは、無人公開の安全装置である品質ゲートの4条件、128KBを超える座標フィールド、範囲外座標の除去、規制形態コードと点数の不一致、zip内ファイル名の cp932、そして「`dataset.json` がどの URL を指すか」です。[tests](.github/workflows/tests.yml) が push と PR で Linux・Windows の両方で走ります。
 
 ## ビューワ
 
@@ -223,12 +320,27 @@ MapLibre GL JS + PMTiles。[aerial-photo-tile-pipeline](https://github.com/shiwa
 |---|---|
 | 背景地図 | 淡色・標準（地理院 最適化ベクトルタイル）／写真（全国最新写真）／白図 を右下で切替 |
 | テーマ | ライト・ダーク切替（ダークは背景スタイルの色を明度反転して生成） |
-| 規制レイヤー | 13 種を個別に表示切替、全ON／全OFF、不透明度スライダー |
+| 規制レイヤー | 13 種を個別に表示切替、全ON／全OFF、不透明度スライダー。その月に収録が無い種別は無効表示 |
 | 重ね順 | 規制は背景の注記（地名・道路番号）より下に差し込むため、ラベルが隠れない |
-| 属性表示 | フィーチャをクリックでポップアップ |
-| その他 | 現在地・全画面・スケール、URL ハッシュで位置共有、PWA 対応、WebGL コンテキスト消失からの自動復帰 |
+| 属性表示 | クリックした地点に**当たったフィーチャをすべて**ポップアップに並べる（交差点では一時停止・停止線・信号機・横断歩道が重なる） |
+| 画面の共有 | 位置・表示レイヤー・不透明度・背景地図を URL ハッシュに載せる（`#map=ズーム/緯度/経度&layers=oneway&opacity=0.6&base=photo`） |
+| その他 | 現在地・全画面・スケール、PWA 対応、WebGL コンテキスト消失からの自動復帰 |
 
-規制は Z9 以上で表示されます（低ズームでは密度が高く潰れるため）。タイルの収録は Z14 まで。
+規制は Z9 以上で表示されます（低ズームでは密度が高く潰れるため）。タイルの収録も Z9〜Z14 です。
+
+ズーム域・レイヤー定義・属性の表示名はビューワ側に書いていません。`data/pipeline.json`・`data/regulation_layers.json`・`data/attributes.json` をビルド時に読み込むので、パイプラインと必ず一致します。PMTiles の配信URLだけは実行時に `data/dataset.json` から読みます。
+
+構成:
+
+| ファイル | 役割 |
+|---|---|
+| `src/main.ts` | 配線だけ（状態の保持と、部品どうしのつなぎ） |
+| `src/config.ts` | `data/` の設定JSONの読み口 |
+| `src/dataset.ts` | `dataset.json` の型と読み込み |
+| `src/regulation.ts` | PMTiles ソースと MapLibre レイヤーの生成 |
+| `src/urlstate.ts` | URL ハッシュへの表示状態の出し入れ |
+| `src/basemap.ts` / `src/theme.ts` | 背景地図とテーマ |
+| `src/ui/*` | レイヤーパネル・ポップアップ・背景スイッチャー・収録データ表示 |
 
 ## 出典
 
