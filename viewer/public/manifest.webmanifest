@@ -1,0 +1,26 @@
+{
+  "name": "全国交通規制マップ",
+  "short_name": "交通規制",
+  "description": "JARTIC 交通規制情報を規制種別ごとのレイヤーで表示するビューワ",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#c1571f",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

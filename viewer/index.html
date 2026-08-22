@@ -2,10 +2,17 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
   <title>全国交通規制マップ</title>
   <meta name="description" content="JARTIC 交通規制情報を規制種別ごとのレイヤーで表示するビューワ" />
+  <link rel="manifest" href="manifest.webmanifest" />
   <meta name="theme-color" content="#c1571f" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="交通規制" />
 </head>
 <body>
   <div id="map"></div>
@@ -14,38 +21,62 @@
     <header class="panel-head">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true">🛑</span>
-        <h1>全国交通規制マップ<br /><span class="brand-sub" id="brand-sub">読み込み中…</span></h1>
+        <h1>全国交通規制マップ<span id="subtitle" class="brand-sub">読み込み中…</span></h1>
       </div>
-      <button id="collapse-btn" class="icon-btn" type="button" title="パネル開閉" aria-label="パネル開閉">−</button>
+      <div class="head-actions">
+        <button id="theme-btn" class="icon-btn" type="button" title="テーマ切替" aria-label="テーマ切替"></button>
+        <button id="collapse-btn" class="icon-btn" type="button" title="パネル開閉" aria-label="パネル開閉"></button>
+      </div>
     </header>
 
     <div id="panel-body" class="panel-body">
       <div class="field">
         <div class="field-head">
-          <span class="field-label">レイヤー</span>
-          <div class="field-actions">
-            <button id="all-on" class="mini-btn" type="button">全ON</button>
-            <button id="all-off" class="mini-btn" type="button">全OFF</button>
-          </div>
+          <span class="field-label">ズームレベル</span>
         </div>
-        <div id="layers" class="toggles"></div>
+        <div class="scale-row">
+          <span id="zoom-badge" class="scale-badge">Z–</span>
+          <span id="zoom-note" class="scale-note"></span>
+        </div>
       </div>
 
       <div class="field">
-        <span class="field-label">収録データ</span>
-        <dl id="dataset" class="dataset"></dl>
+        <div class="field-head">
+          <span class="field-label">規制レイヤー</span>
+          <div class="field-actions">
+            <button id="all-on" class="mini-btn" type="button">全ON</button>
+            <button id="all-off" class="mini-btn" type="button">全OFF</button>
+            <button id="fit-btn" class="mini-btn" type="button" title="全国を表示">全国</button>
+          </div>
+        </div>
+        <div id="layers" class="reg-list"></div>
+        <div class="layer-opacity">
+          <input id="opacity-range" type="range" min="0.1" max="1" step="0.05" value="1"
+                 aria-label="規制レイヤーの不透明度" />
+          <span id="opacity-val" class="op-val">100%</span>
+        </div>
       </div>
 
-      <p class="hint">ズーム9以上で表示されます。フィーチャをクリックすると属性が出ます。</p>
+      <div class="field">
+        <div class="field-head">
+          <span class="field-label">収録データ</span>
+        </div>
+        <dl id="meta" class="meta"></dl>
+      </div>
+
+      <p class="hint">フィーチャをクリックすると属性が出ます。</p>
     </div>
 
     <footer class="panel-foot">
-      出典: <a href="https://www.jartic.or.jp/service/opendata/" target="_blank" rel="noopener">日本道路交通情報センター（JARTIC）交通規制情報</a><br />
+      出典:
+      <a href="https://www.jartic.or.jp/service/opendata/" target="_blank" rel="noopener">日本道路交通情報センター（JARTIC）交通規制情報</a><br />
       背景: <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院</a><br />
       <a href="https://github.com/shiwaku/jartic-traffic-regulation-converter" target="_blank" rel="noopener">GitHub</a>
       <span id="build-ver" class="build-ver"></span>
     </footer>
   </section>
+
+  <div id="error" class="error" hidden></div>
 
   <script type="module" src="/src/main.ts"></script>
 </body>
