@@ -328,8 +328,9 @@ MapLibre GL JS + PMTiles。[aerial-photo-tile-pipeline](https://github.com/shiwa
 | 機能 | 内容 |
 |---|---|
 | 背景地図 | 淡色・標準（地理院 最適化ベクトルタイル）／写真（全国最新写真）／白図 を右下で切替 |
-| テーマ | ライト・ダーク切替（ダークは背景スタイルの色を明度反転して生成） |
+| テーマ | **既定はダーク**。ライトへ切替可（ダークは背景スタイルの色を明度反転して生成）。選んだ値は localStorage に残る |
 | 規制レイヤー | 13 種を個別に表示切替、全ON／全OFF、不透明度スライダー。その月に収録が無い種別は無効表示 |
+| 点の発光 | Z9〜Z12 の点は**発光**で描く（ぼかした大きい円＋中間＋白い芯の3層）。手法は [jma-liden-tile-pipeline](https://github.com/shiwaku/jma-liden-tile-pipeline) のビューワに倣った |
 | 規制標識アイコン | Z13 以上では規制種別ごとのアイコンで描く（[jartic-regulation-sprite](https://github.com/shiwaku/jartic-regulation-sprite)）。Z9〜Z12 は点・線・面 |
 | 重ね順 | 規制は背景の注記（地名・道路番号）より下に差し込むため、ラベルが隠れない |
 | 属性表示 | クリックした地点に**当たったフィーチャをすべて**ポップアップに並べる（交差点では一時停止・停止線・信号機・横断歩道が重なる） |
@@ -337,6 +338,10 @@ MapLibre GL JS + PMTiles。[aerial-photo-tile-pipeline](https://github.com/shiwa
 | その他 | 現在地・全画面・スケール、PWA 対応、WebGL コンテキスト消失からの自動復帰 |
 
 規制は Z9 以上で表示されます（低ズームでは密度が高く潰れるため）。タイルの収録も Z9〜Z14 です。
+
+低ズーム（Z9〜Z12）の点は発光の3層で描き、Z13 からアイコンに切り替わります。
+**半径を上げすぎると暈が融合して密集部が塊になります**（一時停止は152万件あります）。
+調整は `viewer/src/regulation.ts` の `GLOW_STACK` の1か所です。
 
 ### 規制標識のアイコン
 

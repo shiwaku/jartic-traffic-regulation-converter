@@ -5,15 +5,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { getBasemapStyle, type Basemap } from './basemap'
 import { JAPAN_BOUNDS, LAYERS, MAX_ZOOM } from './config'
 import { loadDataset } from './dataset'
-import {
-  BASE_OPACITY,
-  buildLayers,
-  idsOf,
-  nameOf,
-  OPACITY_PROP,
-  regulationSource,
-  SOURCE_ID,
-} from './regulation'
+import { buildLayers, idsOf, nameOf, regulationSource, SOURCE_ID } from './regulation'
 import { applyThemeAttr, initialTheme, type Theme } from './theme'
 import { BasemapControl } from './ui/basemapControl'
 import { $, fatal } from './ui/dom'
@@ -134,16 +126,19 @@ function labelAnchor(): string | undefined {
   return undefined
 }
 
-/** クリック判定とスライダー操作の対象になる、投入済みレイヤー ID。 */
-const activeIds: string[] = []
+/** 投入済みレイヤーの不透明度の情報。スライダーがこれを見て動かす。 */
+const opacityOf = new Map<string, { prop: string; base: number }>()
+/** クリック・ホバーの判定に使うレイヤー ID。発光は3層あるが1枚だけ拾う。 */
+const pickIds: string[] = []
 
 function addRegulationLayers(): void {
   if (!map.getSource(SOURCE_ID)) map.addSource(SOURCE_ID, regulationSource(dataset))
 
   const before = labelAnchor()
-  activeIds.length = 0
+  opacityOf.clear()
+  pickIds.length = 0
 
-  for (const { id, spec } of buildLayers()) {
+  for (const { id, spec, opacity, pick } of buildLayers()) {
     const name = nameOf(id)
     if (!map.getLayer(id)) {
       map.addLayer(
@@ -152,15 +147,13 @@ function addRegulationLayers(): void {
           source: SOURCE_ID,
           ...spec,
           layout: { ...(spec.layout ?? {}), visibility: visible.has(name) ? 'visible' : 'none' },
-          paint: {
-            ...spec.paint,
-            [OPACITY_PROP[spec.type]]: BASE_OPACITY[spec.type] * regOpacity,
-          },
+          paint: { ...spec.paint, [opacity.prop]: opacity.base * regOpacity },
         } as unknown as maplibregl.LayerSpecification,
         before,
       )
     }
-    activeIds.push(id)
+    opacityOf.set(id, opacity)
+    if (pick) pickIds.push(id)
   }
 }
 
@@ -207,11 +200,8 @@ function applyVisibility(): void {
 }
 
 function applyOpacity(): void {
-  for (const id of activeIds) {
-    const layer = map.getLayer(id)
-    if (!layer) continue
-    const prop = OPACITY_PROP[layer.type]
-    if (prop) map.setPaintProperty(id, prop, BASE_OPACITY[layer.type] * regOpacity)
+  for (const [id, { prop, base }] of opacityOf) {
+    if (map.getLayer(id)) map.setPaintProperty(id, prop, base * regOpacity)
   }
 }
 
@@ -248,7 +238,7 @@ map.on('zoom', () => renderZoom(map.getZoom(), tileMaxZoom))
 
 // ---- クリックで属性表示 ----------------------------------------------------
 
-const hitLayers = (): string[] => activeIds.filter((id) => map.getLayer(id))
+const hitLayers = (): string[] => pickIds.filter((id) => map.getLayer(id))
 
 map.on('click', (e) => {
   const ids = hitLayers()
