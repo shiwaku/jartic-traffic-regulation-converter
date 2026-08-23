@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -146,6 +147,17 @@ class TestLayerDefinition(unittest.TestCase):
 
     def test_otherは受け皿なのでコードを持たない(self):
         self.assertEqual(config.layers()["other"]["codes"], [])
+
+    def test_実データでotherに落ちるのは意図した2コードだけ(self):
+        """用途で束ねられない 77 警笛・91 路面電車停留場 以外は必ずどれかのレイヤーに入る。
+
+        レイヤー定義から規制種別コードが抜けると、その規制が「その他」に紛れて
+        気づかない。実データ(data/parse_report.json)に現れたコードで見張る。
+        """
+        report = json.loads(config.PARSE_REPORT.read_text(encoding="utf-8"))
+        data_codes = set(report["code_availability"])
+        assigned = {c for spec in config.layers().values() for c in spec["codes"]}
+        self.assertEqual(sorted(data_codes - assigned, key=int), ["77", "91"])
 
 
 class TestPipelineConfig(unittest.TestCase):
