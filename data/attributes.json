@@ -1,0 +1,33 @@
+{
+  "_comment": "タイルに載せる属性の唯一の情報源。source=元CSVの列名(拡張版標準フォーマット k_2.1)、key=タイル上のキー、label=ビューワのポップアップでの表示名。並び順はポップアップの表示順。src/parse_regulation.py とビューワの両方がここを読むので、属性を増減するときはこのファイルだけを直す。",
+  "_comment_display": "derived:true は元CSVの列ではなくパース時に作るもの。",
+  "_comment_diet": "タイルに載せない属性はここから消す。実測(北海道+東京・Z9)では uid(ユニークキー)だけで全体の48%を食っていた(フィーチャごとに一意で辞書圧縮が効かない)ため外した。uid は生zipと中間GeoJSONL には残るので、元データへの追跡性は失われない。shape と layer は shape_name とタイルのレイヤー名で代替できるため外した。",
+  "attributes": [
+    {"key": "kind",         "source": "県別規制種別名称",                        "label": "規制種別"},
+    {"key": "code",         "source": "共通規制種別コード",                      "label": "共通規制種別コード"},
+    {"key": "shape_name",   "derived": true,                                     "label": "規制形態"},
+    {"key": "pref",         "source": "都道府県コード",                          "label": "都道府県コード"},
+    {"key": "police",       "source": "警察署コード",                            "label": "警察署コード"},
+    {"key": "route",        "source": "路線名(代表)",                            "label": "路線名"},
+    {"key": "crossing",     "source": "交差点名称(踏切名含む)",                  "label": "交差点名称"},
+    {"key": "road_type",    "source": "道路種別コード",                          "label": "道路種別"},
+    {"key": "speed",        "source": "速度",                                    "label": "速度"},
+    {"key": "zone30",       "source": "ゾーン30・ゾーン30プラス指定コード",       "label": "ゾーン30"},
+    {"key": "n_lanes",      "source": "車両通行帯数",                            "label": "車両通行帯数"},
+    {"key": "length",       "source": "距離・延長",                              "label": "距離・延長"},
+    {"key": "area",         "source": "面積",                                    "label": "面積"},
+    {"key": "side",         "source": "片側・両側コード",                        "label": "片側・両側"},
+    {"key": "n_stoplines",  "source": "停止線本数",                              "label": "停止線本数"},
+    {"key": "has_signal",   "source": "信号の有無コード",                        "label": "信号の有無"},
+    {"key": "dir_kind",     "source": "指定・禁止方向の別コード",                "label": "指定・禁止方向の別"},
+    {"key": "dir_in",       "source": "進入方向(文字)",                          "label": "進入方向"},
+    {"key": "dir_deny",     "source": "禁止する方向(文字)",                      "label": "禁止する方向"},
+    {"key": "dir_allow",    "source": "指定する方向(文字)",                      "label": "指定する方向"},
+    {"key": "t1_from",      "source": "規制時間1_開始",                          "label": "規制時間 開始"},
+    {"key": "t1_to",        "source": "規制時間1_終了",                          "label": "規制時間 終了"},
+    {"key": "dow1",         "source": "規制曜日コード1",                         "label": "規制曜日"},
+    {"key": "veh1",         "source": "対象車両コード1_A",                       "label": "対象車両"},
+    {"key": "reason",       "source": "規制理由",                                "label": "規制理由"},
+    {"key": "updated",      "source": "データ更新日",                            "label": "データ更新日"}
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "_comment": "R2 に残っている月次キー(新しい順)。src/publish_r2.py がバケットの実際の状態から書く。",
+  "keep_months": 12,
+  "updated_at": "2026-08-22T21:56:04.607301+00:00",
+  "latest_url": "https://shi-works.com/pmtiles/jartic-traffic-regulation-converter/regulation.pmtiles",
+  "months": [
+    {
+      "year_month": "202606",
+      "url": "https://shi-works.com/pmtiles/jartic-traffic-regulation-converter/202606/regulation.pmtiles"
+    }
+  ]
+}

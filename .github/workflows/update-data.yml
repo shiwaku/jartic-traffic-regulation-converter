@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 concurrency:
   group: update-data
@@ -22,6 +23,7 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       has_new: ${{ steps.check.outputs.has_new }}
       year_month: ${{ steps.check.outputs.year_month }}
@@ -30,83 +32,171 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # check が has_new/年月/公開日を step output に書くので、
+      # カタログの取得は1回で済む。終了コード 10 は「新しい月がある」で失敗ではない。
       - id: check
         run: |
           set +e
           python3 src/run_pipeline.py check
           code=$?
           set -e
-          if [ "$code" = "10" ] || [ "${{ inputs.force }}" = "true" ]; then
-            echo "has_new=true" >> "$GITHUB_OUTPUT"
-          elif [ "$code" = "0" ]; then
-            echo "has_new=false" >> "$GITHUB_OUTPUT"
-          else
-            exit $code
-          fi
-          echo "year_month=$(python3 src/catalog_month.py)" >> "$GITHUB_OUTPUT"
+          if [ "$code" != "0" ] && [ "$code" != "10" ]; then exit $code; fi
 
   update:
     needs: check
-    if: needs.check.outputs.has_new == 'true'
+    if: needs.check.outputs.has_new == 'true' || inputs.force
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    env:
+      YEAR_MONTH: ${{ needs.check.outputs.year_month }}
+    outputs:
+      # 配信するコミット。push しなかった場合も現在の HEAD を返す。
+      sha: ${{ steps.push.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: tippecanoe を入れる
+      # ツールの版も data/pipeline.json が情報源。YAML には書かない。
+      - id: cfg
         run: |
+          set -euo pipefail
+          v=$(python3 -c "import json;print(json.load(open('data/pipeline.json'))['tippecanoe_version'])")
+          echo "tippecanoe=$v" >> "$GITHUB_OUTPUT"
+          echo "tippecanoe $v"
+
+      - name: tippecanoe を復元
+        id: tippecanoe-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/bin/tippecanoe
+          key: tippecanoe-${{ steps.cfg.outputs.tippecanoe }}-${{ runner.os }}
+
+      - name: tippecanoe をビルド
+        if: steps.tippecanoe-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq build-essential libsqlite8-dev zlib1g-dev || \
-          sudo apt-get install -y -qq build-essential libsqlite3-dev zlib1g-dev
-          git clone --depth 1 https://github.com/felt/tippecanoe /tmp/tippecanoe
+          sudo apt-get install -y --no-install-recommends build-essential libsqlite3-dev zlib1g-dev
+          git clone --depth 1 --branch "${{ steps.cfg.outputs.tippecanoe }}" \
+            https://github.com/felt/tippecanoe /tmp/tippecanoe
           make -C /tmp/tippecanoe -j"$(nproc)"
-          sudo make -C /tmp/tippecanoe install
+          mkdir -p ~/.local/bin
+          cp /tmp/tippecanoe/tippecanoe ~/.local/bin/
+
+      - name: tippecanoe を PATH に入れる
+        run: |
+          set -euo pipefail
+          chmod +x ~/.local/bin/tippecanoe
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: 実行できる環境か確かめる
+        run: python3 src/run_pipeline.py doctor
 
       - name: 生データを取得
         run: python3 src/jartic_opendata_kisei_dl.py --out work/zip
 
-      # 品質ゲートより先に退避する。JARTIC は最新1か月しか配布せず、
-      # 過去月のURLは消える。ゲートに落ちても生データは残す。
+      # JARTIC は最新1か月分しか配布しない。過去月のURLは消えるので、
+      # 品質ゲートより先に退避する。ゲートに落ちても生データは残る。
       - name: 生zipを Release へ退避
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="raw-${{ needs.check.outputs.year_month }}"
-          gh release view "$TAG" >/dev/null 2>&1 || \
-            gh release create "$TAG" --title "$TAG 生データ" \
-              --notes "JARTIC 交通規制情報の生zip。JARTIC は最新1か月分しか配布しないため退避したもの。"
-          gh release upload "$TAG" work/zip/*.zip work/zip/catalog.json --clobber
+        run: python3 src/archive_raw.py --zip-dir work/zip
 
+      # --skip-download で上の取得結果を使い回す(320MB を二度落とさない)。
       - name: パースとタイル生成、品質ゲート
+        id: pipeline
         run: |
-          ARGS=""
-          if [ "${{ inputs.force }}" = "true" ]; then ARGS="--force"; fi
-          python3 src/run_pipeline.py run $ARGS
+          set -o pipefail
+          ARGS="--skip-download"
+          if [ "${{ inputs.force }}" = "true" ]; then ARGS="$ARGS --force"; fi
+          python3 src/run_pipeline.py run $ARGS 2>&1 | tee work/pipeline.log
 
-      # GitHub Release のアセットは CORS ヘッダーを返さず、ブラウザから pmtiles.js の
-      # Range フェッチができない。CORS 設定済みの R2(shi-works) に固定パスで上書き公開する。
+      # 90MB を超えるので R2 配信になる。キー設計・サイズ検証・古い月の剪定は
+      # src/publish_r2.py が持つ(ここで bash で組み直さない)。
       - name: PMTiles を R2 へ公開
+        if: success() && steps.pipeline.outputs.pmtiles_in_repo == 'false'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
-        run: |
-          IN_REPO=$(python3 -c "import json;print(json.load(open('data/dataset.json'))['pmtiles_in_repo'])")
-          if [ "$IN_REPO" = "False" ]; then
-            aws s3 cp work/regulation.pmtiles \
-              s3://shi-works/pmtiles/jartic-traffic-regulation-converter/regulation.pmtiles \
-              --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
-              --content-type application/octet-stream
-          fi
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+        run: python3 src/publish_r2.py
 
+      # 公開が済んだあとで data/ を commit する。この順序が
+      # 「dataset.json が指す URL は必ず存在する」という約束を成り立たせている。
       - name: main を更新
+        id: push
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data README.md
-          git diff --cached --quiet && echo "変更なし" && exit 0
-          git commit -m "data: ${{ needs.check.outputs.year_month }} に更新"
-          git push
+          if git diff --cached --quiet; then
+            echo "変更なし"
+          else
+            git commit -m "data: ${YEAR_MONTH} に更新"
+            git push
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      # 品質ゲート落ちも実行エラーも取りこぼさない。日次で走るので、
+      # 同じ失敗が続いたときは新しい Issue を立てずに既存へコメントする。
+      - name: 失敗を Issue にする
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 式を直接 bash に埋めない(ゲートの文面に引用符が入る)
+          GATE: ${{ steps.pipeline.outputs.gate }}
+          VIOLATIONS: ${{ steps.pipeline.outputs.violations }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          LABEL=data-update-failure
+          if [ "$GATE" = "fail" ]; then
+            REASON="品質ゲートで停止"
+          else
+            REASON="実行エラー"
+          fi
+          {
+            echo "対象年月 **${YEAR_MONTH}** の取り込みが失敗しました（${REASON}）。"
+            echo
+            echo "生zipの退避は品質ゲートより先に済ませているため、生データは失われていません。"
+            echo
+            if [ -n "${VIOLATIONS:-}" ]; then
+              echo "違反: ${VIOLATIONS}"
+              echo
+            fi
+            if [ -f work/pipeline.log ]; then
+              echo '```'
+              tail -n 40 work/pipeline.log
+              echo '```'
+              echo
+            fi
+            echo "実行: ${RUN_URL}"
+          } > issue.md
+          gh label create "$LABEL" --color B60205 \
+            --description "データ更新の失敗" 2>/dev/null || true
+          existing=$(gh issue list --label "$LABEL" --state open \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file issue.md
+            echo "既存 Issue #$existing にコメントした"
+          else
+            gh issue create --title "データ更新が失敗した（${YEAR_MONTH} / ${REASON}）" \
+              --label "$LABEL" --body-file issue.md
+          fi
+
+  # データが更新されたら必ず配信し直す。
+  # github-actions[bot] の push では pages.yml の push トリガーが発火しないため、
+  # ここから明示的に呼ぶ。ref を渡さないと更新前のコミットが配信される。
+  deploy:
+    needs: update
+    uses: ./.github/workflows/pages.yml
+    with:
+      ref: ${{ needs.update.outputs.sha }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write

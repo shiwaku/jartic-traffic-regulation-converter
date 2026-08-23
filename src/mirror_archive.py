@@ -20,7 +20,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import config  # noqa: E402
+
+ROOT = config.ROOT
 DEFAULT_DIR = ROOT.parent / "jartic-archive"
 ARTIFACTS = ["parse_report.json", "dataset.json"]
 
@@ -34,10 +37,10 @@ def sha256(p: Path) -> str:
 
 
 def year_month() -> str:
-    ds = ROOT / "data" / "dataset.json"
+    ds = config.DATASET
     if ds.exists():
         return json.loads(ds.read_text(encoding="utf-8"))["year_month"]
-    cat = ROOT / "work" / "zip" / "catalog.json"
+    cat = config.work_dir() / "zip" / "catalog.json"
     if cat.exists():
         return json.loads(cat.read_text(encoding="utf-8"))["year_month"]
     raise SystemExit("年月が分からない。先に run_pipeline を実行する。")
@@ -55,16 +58,17 @@ def from_release(ym: str, dest: Path) -> None:
 
 
 def from_work(dest: Path) -> None:
-    zips = sorted((ROOT / "work" / "zip").glob("typeD_*.zip"))
+    work = config.work_dir()
+    zips = sorted((work / "zip").glob("typeD_*.zip"))
     if not zips:
-        raise SystemExit("work/zip に typeD_*.zip が無い")
+        raise SystemExit(f"{work / 'zip'} に typeD_*.zip が無い")
     for z in zips:
         shutil.copy2(z, dest / z.name)
-    cat = ROOT / "work" / "zip" / "catalog.json"
+    cat = work / "zip" / "catalog.json"
     if cat.exists():
         shutil.copy2(cat, dest / "catalog.json")
     for name in ARTIFACTS:
-        for base in (ROOT / "data", ROOT / "work"):
+        for base in (config.DATA, work):
             p = base / name
             if p.exists():
                 shutil.copy2(p, dest / name)

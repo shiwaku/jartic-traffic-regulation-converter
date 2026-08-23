@@ -33,55 +33,48 @@ import zipfile
 from collections import Counter, defaultdict
 from pathlib import Path
 
-# タイルに載せる属性。全170列は載せない(タイルが膨らむ)。
-KEEP = [
-    ("共通規制種別コード", "code"),
-    ("県別規制種別名称", "kind"),
-    ("点・線・面コード", "shape"),
-    ("都道府県コード", "pref"),
-    ("警察署コード", "police"),
-    ("ユニークキー", "uid"),
-    ("道路種別コード", "road_type"),
-    ("路線名(代表)", "route"),
-    ("交差点名称(踏切名含む)", "crossing"),
-    ("規制時間1_開始", "t1_from"),
-    ("規制時間1_終了", "t1_to"),
-    ("規制曜日コード1", "dow1"),
-    ("対象車両コード1_A", "veh1"),
-    ("速度", "speed"),
-    ("ゾーン30・ゾーン30プラス指定コード", "zone30"),
-    ("車両通行帯数", "n_lanes"),
-    ("距離・延長", "length"),
-    ("面積", "area"),
-    ("片側・両側コード", "side"),
-    ("停止線本数", "n_stoplines"),
-    ("信号の有無コード", "has_signal"),
-    ("指定・禁止方向の別コード", "dir_kind"),
-    ("進入方向(文字)", "dir_in"),
-    ("禁止する方向(文字)", "dir_deny"),
-    ("指定する方向(文字)", "dir_allow"),
-    ("規制理由", "reason"),
-    ("データ更新日", "updated"),
-]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import config  # noqa: E402
+
+# タイルに載せる属性は data/attributes.json が情報源(全170列は載せない)。
+# ビューワのポップアップも同じファイルを読むので、増減はあちらだけを直す。
+_ATTRS = config.attributes()
+KEEP_COLS = [(a["source"], a["key"]) for a in _ATTRS if "source" in a]
+DERIVED = {a["key"] for a in _ATTRS if a.get("derived")}
+
 SHAPE_NAME = {"1": "point", "2": "line", "3": "area"}
 
+# ジオメトリの決定とレイヤー分けに必ず要る列。属性表(attributes.json)から
+# 外してもパースには要るので、そちらとは別に持つ。
+COL_GEOM = "規制場所の経度緯度"
+COL_CODE = "共通規制種別コード"
+COL_SHAPE = "点・線・面コード"
+COL_PREF = "都道府県コード"
+REQUIRED_COLS = [COL_GEOM, COL_CODE, COL_SHAPE, COL_PREF]
+
 # 「規制場所の経度緯度」は1フィールドに折れ線が丸ごと入る。
-# 実データで 128KB(csv の既定上限)を超える県があったため上限を外す。
-csv.field_size_limit(sys.maxsize)
+# 実データで 128KB(csv の既定上限)を超える県があったため上限を上げる。
+# sys.maxsize を渡すと Windows(C long が32bit)では OverflowError になるので、
+# 32bit に収まる最大値にする。実データの最長フィールドより桁違いに大きい。
+csv.field_size_limit(2 ** 31 - 1)
 COORD_PREC = 6  # 1e-6 度 ≒ 0.1m
+
+
+def member_name(info: zipfile.ZipInfo) -> str:
+    """zip 内のファイル名。UTF-8 フラグが無いものは cp932 で格納されている。"""
+    if info.flag_bits & 0x800:
+        return info.filename
+    try:
+        return info.filename.encode("cp437").decode("cp932")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return info.filename
 
 
 def member_names(z: zipfile.ZipFile):
     for info in z.infolist():
         if info.is_dir():
             continue
-        if info.flag_bits & 0x800:
-            name = info.filename
-        else:
-            try:
-                name = info.filename.encode("cp437").decode("cp932")
-            except (UnicodeEncodeError, UnicodeDecodeError):
-                name = info.filename
+        name = member_name(info)
         if name.lower().endswith(".csv"):
             yield info, name
 
@@ -140,7 +133,7 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--zip-dir", default="work/zip")
     p.add_argument("--out", default="work")
-    p.add_argument("--layers", default="data/regulation_layers.json")
+    p.add_argument("--layers", default=str(config.LAYERS_JSON))
     args = p.parse_args()
 
     layers = json.loads(Path(args.layers).read_text(encoding="utf-8"))["layers"]
@@ -179,13 +172,13 @@ def main() -> None:
                         if not head:
                             continue
                         ci = {c: k for k, c in enumerate(head)}
-                        missing = [c for c, _ in KEEP if c not in ci]
+                        missing = [c for c, _ in KEEP_COLS if c not in ci]
                         if missing:
                             anomalies[f"列欠落:{member}"] += 1
-                        geom_col = ci.get("規制場所の経度緯度")
-                        code_col = ci.get("共通規制種別コード")
-                        shape_col = ci.get("点・線・面コード")
-                        pref_col = ci.get("都道府県コード")
+                        geom_col = ci.get(COL_GEOM)
+                        code_col = ci.get(COL_CODE)
+                        shape_col = ci.get(COL_SHAPE)
+                        pref_col = ci.get(COL_PREF)
                         if geom_col is None or code_col is None:
                             anomalies[f"必須列なし:{member}"] += 1
                             continue
@@ -209,15 +202,18 @@ def main() -> None:
                             code = row[code_col]
                             lname = layer_of(code, layers)
                             props = {}
-                            for src, dst in KEEP:
+                            for src, dst in KEEP_COLS:
                                 k = ci.get(src)
                                 if k is None or k >= len(row):
                                     continue
                                 v = row[k].strip()
                                 if v:
                                     props[dst] = v
-                            props["layer"] = lname
-                            props["shape_name"] = SHAPE_NAME.get(shape, shape)
+                            # 派生属性。attributes.json から外せば載らない。
+                            if "layer" in DERIVED:
+                                props["layer"] = lname
+                            if "shape_name" in DERIVED:
+                                props["shape_name"] = SHAPE_NAME.get(shape, shape)
                             handles[lname].write(
                                 json.dumps(
                                     {"type": "Feature", "geometry": geom, "properties": props},

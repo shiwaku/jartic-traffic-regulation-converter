@@ -1,0 +1,26 @@
+{
+  "_comment": "パイプラインとビューワが共有する設定。Python・TypeScript・GitHub Actions のどれもここを読む。同じ値を2か所に書かないための置き場所。",
+
+  "_comment_tippecanoe": "CI が固定するバージョン。手元(WSL2)もこれに合わせる。生成物が変わり得るので dataset.json に実際に使った版を記録する。",
+  "tippecanoe_version": "2.80.0",
+
+  "tiles": {
+    "_comment": "min_zoom/max_zoom はタイルに収録する範囲。display_min_zoom はビューワが描き始めるズーム(低ズームは密度が高く潰れる)。max_tile_bytes は 0 で無制限(tippecanoe --no-tile-size-limit)。",
+    "min_zoom": 9,
+    "max_zoom": 14,
+    "display_min_zoom": 9,
+    "max_tile_bytes": 0
+  },
+
+  "_comment_limit": "GitHub の1ファイル上限は100MB。超えたら R2 配信に切り替える。",
+  "repo_file_limit_mb": 90,
+  "pmtiles_name": "regulation.pmtiles",
+
+  "r2": {
+    "_comment": "月次キー(不変・ビューワが読む)と latest キー(毎月上書き)の2本立て。keep_months より古い月次キーは publish 時に消す。",
+    "bucket": "shi-works",
+    "prefix": "pmtiles/jartic-traffic-regulation-converter",
+    "public_base": "https://shi-works.com/pmtiles/jartic-traffic-regulation-converter",
+    "keep_months": 12
+  }
+}

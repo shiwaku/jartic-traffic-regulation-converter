@@ -7,11 +7,16 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-DATASET = ROOT / "data" / "dataset.json"
-REPORT = ROOT / "data" / "parse_report.json"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import config  # noqa: E402
+
+ROOT = config.ROOT
+DATASET = config.DATASET
+REPORT = config.PARSE_REPORT
+HISTORY = config.DATA / "history.json"
 README = ROOT / "README.md"
 BEGIN, END = "<!-- dataset:begin -->", "<!-- dataset:end -->"
 LBEGIN, LEND = "<!-- layers:begin -->", "<!-- layers:end -->"
@@ -25,7 +30,8 @@ def replace_block(text: str, begin: str, end: str, body: str) -> str:
 
 def build_dataset_table(d: dict) -> str:
     dist = "リポジトリ同梱" if d.get("pmtiles_in_repo") else "R2配信(Range配信)"
-    return "\n".join([
+    tiles = d.get("tiles") or {}
+    rows = [
         "| 項目 | 内容 |",
         "|---|---|",
         f"| 対象年月 | {d['target_month']} |",
@@ -35,7 +41,14 @@ def build_dataset_table(d: dict) -> str:
         f"| 地図に載るフィーチャ数 | {d['features_total']:,}件 |",
         f"| 形状異常 | {d['anomalies_total']:,}件（data/parse_report.json に内訳） |",
         f"| PMTiles | {d['pmtiles_mb']}MB（{dist}） |",
-    ])
+    ]
+    if tiles.get("max_zoom") is not None:
+        rows.append(f"| 収録ズーム | Z{tiles['min_zoom']}〜Z{tiles['max_zoom']} |")
+    if HISTORY.exists():
+        months = json.loads(HISTORY.read_text(encoding="utf-8")).get("months", [])
+        if months:
+            rows.append(f"| 引ける過去月 | {len(months)}か月 |")
+    return "\n".join(rows)
 
 
 def build_layer_table(d: dict) -> str:
