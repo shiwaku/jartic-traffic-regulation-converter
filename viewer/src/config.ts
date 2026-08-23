@@ -15,6 +15,23 @@ export const MIN_ZOOM: number = pipelineDef.tiles.display_min_zoom
 /** タイルに収録されている最大ズーム。これを超えると引き伸ばし表示。 */
 export const MAX_ZOOM: number = pipelineDef.tiles.max_zoom
 
+/**
+ * 規制種別ごとのアイコンのスプライト。
+ * 別リポジトリ（jartic-regulation-sprite）で作って GitHub Pages が配信している。
+ * アイコン名は共通規制種別コードそのものなので、`reg:63` のように引ける。
+ * 背景地図のスタイルが持つスプライトは id を `default` にして残すため、
+ * そちらの `icon-image` は書き換えずに済む。
+ */
+export const SPRITE_ID = 'reg'
+export const SPRITE_URL = 'https://shiwaku.github.io/jartic-regulation-sprite/sprite'
+
+/**
+ * アイコンを出し始めるズーム。これより低いズームでは点・線・面で描く。
+ * 一時停止だけで152万件あるため、低ズームで symbol レイヤーを出すと
+ * 衝突判定が重くなりすぎる。
+ */
+export const ICON_MIN_ZOOM = 13
+
 /** 全国分のデータなので、初期表示・全体表示はこの範囲に合わせる。 */
 export const JAPAN_BOUNDS: [number, number, number, number] = [122, 20, 154, 46]
 

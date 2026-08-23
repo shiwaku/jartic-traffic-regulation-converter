@@ -323,12 +323,32 @@ MapLibre GL JS + PMTiles。[aerial-photo-tile-pipeline](https://github.com/shiwa
 | 背景地図 | 淡色・標準（地理院 最適化ベクトルタイル）／写真（全国最新写真）／白図 を右下で切替 |
 | テーマ | ライト・ダーク切替（ダークは背景スタイルの色を明度反転して生成） |
 | 規制レイヤー | 13 種を個別に表示切替、全ON／全OFF、不透明度スライダー。その月に収録が無い種別は無効表示 |
+| 規制標識アイコン | Z13 以上では規制種別ごとのアイコンで描く（[jartic-regulation-sprite](https://github.com/shiwaku/jartic-regulation-sprite)）。Z9〜Z12 は点・線・面 |
 | 重ね順 | 規制は背景の注記（地名・道路番号）より下に差し込むため、ラベルが隠れない |
 | 属性表示 | クリックした地点に**当たったフィーチャをすべて**ポップアップに並べる（交差点では一時停止・停止線・信号機・横断歩道が重なる） |
 | 画面の共有 | 位置・表示レイヤー・不透明度・背景地図を URL ハッシュに載せる（`#map=ズーム/緯度/経度&layers=oneway&opacity=0.6&base=photo`） |
 | その他 | 現在地・全画面・スケール、PWA 対応、WebGL コンテキスト消失からの自動復帰 |
 
 規制は Z9 以上で表示されます（低ズームでは密度が高く潰れるため）。タイルの収録も Z9〜Z14 です。
+
+### 規制標識のアイコン
+
+Z13 以上では、共通規制種別コードごとのアイコンを出します。アイコンは別リポジトリ
+[jartic-regulation-sprite](https://github.com/shiwaku/jartic-regulation-sprite) で作って
+GitHub Pages が配信しており、**アイコン名が共通規制種別コードそのもの**なので、
+ビューワ側は次の1行で引けます。
+
+```js
+'icon-image': ['concat', 'reg:', ['get', 'code']]
+```
+
+背景地図（地理院の最適化ベクトルタイル）のスプライトは置き換えません。MapLibre の
+`sprite` を配列にして、既存のスプライトに `id: 'default'` を、規制用に `id: 'reg'` を
+付けています。`default` はプレフィックス無しで参照できるため、背景地図側の
+`icon-image` は書き換えずに済みます。
+
+低ズームでアイコンを出すと衝突判定が重すぎるため（一時停止だけで152万件）、
+Z13 から出し、点レイヤーの丸はそこで消しています。
 
 ズーム域・レイヤー定義・属性の表示名はビューワ側に書いていません。`data/pipeline.json`・`data/regulation_layers.json`・`data/attributes.json` をビルド時に読み込むので、パイプラインと必ず一致します。PMTiles の配信URLだけは実行時に `data/dataset.json` から読みます。
 
@@ -352,6 +372,7 @@ MapLibre GL JS + PMTiles。[aerial-photo-tile-pipeline](https://github.com/shiwa
 ## 関連
 
 - [jartic-traffic-signal-cycle-converter](https://github.com/shiwaku/jartic-traffic-signal-cycle-converter) — 同じ JARTIC オープンデータの交差点制御情報（信号サイクル長）版
+- [jartic-regulation-sprite](https://github.com/shiwaku/jartic-regulation-sprite) — このビューワが使う規制種別アイコンのスプライト
 - [sapporo-micro-traffic-sim](https://github.com/shiwaku/sapporo-micro-traffic-sim) — このデータを入力に使うミクロ交通シミュレーション
 
 ## ライセンス
