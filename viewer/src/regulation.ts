@@ -1,6 +1,6 @@
 import type { ExpressionSpecification, VectorSourceSpecification } from 'maplibre-gl'
 
-import { LAYERS, MIN_ZOOM, POINT_LAYERS } from './config'
+import { ICON_MIN_ZOOM, LAYERS, MIN_ZOOM, POINT_LAYERS, SPRITE_ID } from './config'
 import type { Dataset } from './dataset'
 
 /**
@@ -40,11 +40,19 @@ const circleRadius: ExpressionSpecification = [
   16, 6,
 ]
 
+/** アイコンは 64px で作ってあるので、地図では 20〜27px になるよう縮める。 */
+const iconSize: ExpressionSpecification = [
+  'interpolate', ['linear'], ['zoom'],
+  13, 0.3,
+  16, 0.42,
+]
+
 /** 各レイヤー種別の基準不透明度。スライダー値はこれに掛ける。 */
 export const BASE_OPACITY: Record<string, number> = {
   fill: 0.14,
   line: 0.9,
   circle: 0.85,
+  symbol: 1,
 }
 
 /** 不透明度スライダーが動かす paint プロパティ（レイヤー種別ごとに違う）。 */
@@ -52,12 +60,14 @@ export const OPACITY_PROP: Record<string, string> = {
   fill: 'fill-opacity',
   line: 'line-opacity',
   circle: 'circle-opacity',
+  symbol: 'icon-opacity',
 }
 
 export type LayerSpecInput = {
-  type: 'fill' | 'line' | 'circle'
+  type: 'fill' | 'line' | 'circle' | 'symbol'
   'source-layer': string
   minzoom: number
+  maxzoom?: number
   filter?: unknown
   layout?: Record<string, unknown>
   paint: Record<string, unknown>
@@ -65,12 +75,13 @@ export type LayerSpecInput = {
 
 /** レイヤー名から、そのレイヤーを構成する MapLibre レイヤー ID を返す。 */
 export function idsOf(name: string): string[] {
-  return POINT_LAYERS.has(name) ? [`${name}-point`] : [`${name}-line`, `${name}-fill`]
+  const shape = POINT_LAYERS.has(name) ? [`${name}-point`] : [`${name}-line`, `${name}-fill`]
+  return [...shape, `${name}-icon`]
 }
 
 /** MapLibre レイヤー ID から、もとの規制レイヤー名を返す。 */
 export function nameOf(id: string): string {
-  return id.replace(/-(fill|line|point)$/, '')
+  return id.replace(/-(fill|line|point|icon)$/, '')
 }
 
 /** 面 → 線 → 点 の順に積む（点が最前面）。 */
@@ -113,6 +124,8 @@ export function buildLayers(): { id: string; spec: LayerSpecInput }[] {
         type: 'circle',
         'source-layer': name,
         minzoom: MIN_ZOOM,
+        // アイコンが出るズームからは丸を消す（同じ位置に二重に描かない）
+        maxzoom: ICON_MIN_ZOOM,
         paint: {
           'circle-color': spec.color,
           'circle-radius': circleRadius,
@@ -120,6 +133,27 @@ export function buildLayers(): { id: string; spec: LayerSpecInput }[] {
           'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 13, 0, 15, 0.6],
           'circle-stroke-color': '#fff',
         },
+      },
+    })
+  }
+
+  // 規制種別ごとのアイコン。スプライトのアイコン名は共通規制種別コードそのものなので、
+  // 属性 code から直に引ける。密度が高いので衝突判定に任せて間引く
+  // （icon-allow-overlap は付けない）。
+  for (const name of Object.keys(LAYERS)) {
+    out.push({
+      id: `${name}-icon`,
+      spec: {
+        type: 'symbol',
+        'source-layer': name,
+        minzoom: ICON_MIN_ZOOM,
+        layout: {
+          // スプライトのアイコン名は共通規制種別コードそのもの。
+          // スプライトに無いコードは何も描かれない（地図は壊れない）。
+          'icon-image': ['concat', `${SPRITE_ID}:`, ['get', 'code']],
+          'icon-size': iconSize,
+        },
+        paint: { 'icon-opacity': BASE_OPACITY.symbol },
       },
     })
   }

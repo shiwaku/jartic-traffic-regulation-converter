@@ -1,4 +1,6 @@
 import type { StyleSpecification } from 'maplibre-gl'
+
+import { SPRITE_ID, SPRITE_URL } from './config'
 import type { Theme } from './theme'
 
 /**
@@ -160,16 +162,31 @@ function blankStyle(theme: Theme): StyleSpecification {
   } as StyleSpecification
 }
 
+/**
+ * 背景地図のスプライトに、規制アイコンのスプライトを1本足す。
+ *
+ * MapLibre は `sprite` を `{id,url}` の配列にできる。id が `default` のものは
+ * プレフィックス無しで参照できるので、背景地図側の `icon-image` はそのまま動く。
+ * 規制側は `reg:<コード>` で引く。
+ *
+ * 素のスタイル（キャッシュ済み）を書き換えないよう、浅いコピーを返す。
+ */
+function withRegulationSprite(style: StyleSpecification): StyleSpecification {
+  if (Array.isArray(style.sprite)) return style
+  const base = typeof style.sprite === 'string' ? [{ id: 'default', url: style.sprite }] : []
+  return { ...style, sprite: [...base, { id: SPRITE_ID, url: SPRITE_URL }] }
+}
+
 export async function getBasemapStyle(base: Basemap, theme: Theme): Promise<StyleSpecification> {
-  if (base === 'photo') return photoStyle()
-  if (base === 'blank') return blankStyle(theme)
+  if (base === 'photo') return withRegulationSprite(photoStyle())
+  if (base === 'blank') return withRegulationSprite(blankStyle(theme))
 
   const key = `${base}-${theme}`
   const cached = styleCache.get(key)
   if (cached) return cached
 
   const src = await loadRaw(base)
-  const style = theme === 'dark' ? recolor(src, darkenColor) : src
+  const style = withRegulationSprite(theme === 'dark' ? recolor(src, darkenColor) : src)
 
   styleCache.set(key, style)
   return style
