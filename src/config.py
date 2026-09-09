@@ -47,6 +47,7 @@ def _load(p: Path) -> dict:
 _cfg = _load(PIPELINE_JSON)
 
 TIPPECANOE_VERSION: str = _cfg["tippecanoe_version"]
+TIPPECANOE_REF: str = _cfg["tippecanoe_ref"]  # felt/tippecanoe のコミット。CI はこれをビルドする
 
 _tiles = _cfg["tiles"]
 MIN_ZOOM: int = _tiles["min_zoom"]

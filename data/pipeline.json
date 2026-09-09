@@ -1,8 +1,9 @@
 {
   "_comment": "パイプラインとビューワが共有する設定。Python・TypeScript・GitHub Actions のどれもここを読む。同じ値を2か所に書かないための置き場所。",
 
-  "_comment_tippecanoe": "CI が固定するバージョン。手元(WSL2)もこれに合わせる。生成物が変わり得るので dataset.json に実際に使った版を記録する。",
+  "_comment_tippecanoe": "CI が固定するバージョン。手元(WSL2)もこれに合わせる。生成物が変わり得るので dataset.json に実際に使った版を記録する。felt/tippecanoe は 2.79.0 (2025-07) を最後にタグを打たず version.hpp だけ上げているため、版名では clone できない。tippecanoe_ref に version.hpp をその版にしたコミットを置き、CI はこれを checkout してビルドし、--version が tippecanoe_version と一致することを確かめる。",
   "tippecanoe_version": "2.80.0",
+  "tippecanoe_ref": "533e000faa1d83a4e119c2e6ff8c6bddf85923fd",
 
   "tiles": {
     "_comment": "min_zoom/max_zoom はタイルに収録する範囲。display_min_zoom はビューワが描き始めるズーム(低ズームは密度が高く潰れる)。max_tile_bytes は 0 で無制限(tippecanoe --no-tile-size-limit)。",
