@@ -97,7 +97,7 @@ def cmd_doctor() -> int:
     print(f"python     : {sys.version.split()[0]}")
     print(
         f"tippecanoe : {build_tiles.tippecanoe_version() or '(無し)'} "
-        f"(ピン留め {config.TIPPECANOE_VERSION})"
+        f"(ピン留め {config.TIPPECANOE_VERSION} @ {config.TIPPECANOE_REF[:12]})"
     )
     print(
         f"タイル     : Z{config.MIN_ZOOM}-Z{config.MAX_ZOOM} / "

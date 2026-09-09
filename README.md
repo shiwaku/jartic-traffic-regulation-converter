@@ -156,6 +156,14 @@
 
 **tippecanoe には Windows 向けの配布がありません。手元では WSL2 の中で実行してください。** CI も Linux なので、これで CI と同じ経路になります。
 
+tippecanoe の版は [`data/pipeline.json`](data/pipeline.json) の `tippecanoe_version` と `tippecanoe_ref`（felt/tippecanoe のコミット）で固定しています。**felt/tippecanoe は 2.79.0（2025-07）を最後にリリースタグを打っておらず、`version.hpp` だけが上がる**ため、版名では clone できません（CI がこれで 2026-09 に1週間止まりました）。CI と同じものを手元に入れるには：
+
+```bash
+ref=$(python3 -c "import json;print(json.load(open('data/pipeline.json'))['tippecanoe_ref'])")
+git init /tmp/tippecanoe && git -C /tmp/tippecanoe fetch --depth 1 https://github.com/felt/tippecanoe "$ref"
+git -C /tmp/tippecanoe checkout FETCH_HEAD && make -C /tmp/tippecanoe -j"$(nproc)" && sudo make -C /tmp/tippecanoe install
+```
+
 ```bash
 # 実行できる環境か先に確かめる（tippecanoe の在処・版、ディスクの空き、設定ファイル）
 python3 src/run_pipeline.py doctor

@@ -63,25 +63,39 @@ jobs:
         run: |
           set -euo pipefail
           v=$(python3 -c "import json;print(json.load(open('data/pipeline.json'))['tippecanoe_version'])")
+          ref=$(python3 -c "import json;print(json.load(open('data/pipeline.json'))['tippecanoe_ref'])")
           echo "tippecanoe=$v" >> "$GITHUB_OUTPUT"
-          echo "tippecanoe $v"
+          echo "tippecanoe_ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "tippecanoe $v @ $ref"
 
       - name: tippecanoe を復元
         id: tippecanoe-cache
         uses: actions/cache@v4
         with:
           path: ~/.local/bin/tippecanoe
-          key: tippecanoe-${{ steps.cfg.outputs.tippecanoe }}-${{ runner.os }}
+          key: tippecanoe-${{ steps.cfg.outputs.tippecanoe }}-${{ steps.cfg.outputs.tippecanoe_ref }}-${{ runner.os }}
 
+      # felt/tippecanoe は 2.79.0 を最後にタグを打っていない(version.hpp だけ上がる)ので、
+      # 版名ではなく data/pipeline.json の tippecanoe_ref(コミット)を checkout する。
+      # ビルド後に --version がピン留めと一致することを確かめ、ずれていたらここで止める。
       - name: tippecanoe をビルド
         if: steps.tippecanoe-cache.outputs.cache-hit != 'true'
+        env:
+          TIPPECANOE_VERSION: ${{ steps.cfg.outputs.tippecanoe }}
+          TIPPECANOE_REF: ${{ steps.cfg.outputs.tippecanoe_ref }}
         run: |
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends build-essential libsqlite3-dev zlib1g-dev
-          git clone --depth 1 --branch "${{ steps.cfg.outputs.tippecanoe }}" \
-            https://github.com/felt/tippecanoe /tmp/tippecanoe
+          git init -q /tmp/tippecanoe
+          git -C /tmp/tippecanoe fetch -q --depth 1 https://github.com/felt/tippecanoe "$TIPPECANOE_REF"
+          git -C /tmp/tippecanoe checkout -q FETCH_HEAD
           make -C /tmp/tippecanoe -j"$(nproc)"
+          built=$(/tmp/tippecanoe/tippecanoe --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
+          if [ "$built" != "$TIPPECANOE_VERSION" ]; then
+            echo "::error::tippecanoe_ref $TIPPECANOE_REF をビルドすると $built になる。data/pipeline.json の tippecanoe_version ($TIPPECANOE_VERSION) と合わせること"
+            exit 1
+          fi
           mkdir -p ~/.local/bin
           cp /tmp/tippecanoe/tippecanoe ~/.local/bin/
 
@@ -100,6 +114,7 @@ jobs:
       # JARTIC は最新1か月分しか配布しない。過去月のURLは消えるので、
       # 品質ゲートより先に退避する。ゲートに落ちても生データは残る。
       - name: 生zipを Release へ退避
+        id: archive
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 src/archive_raw.py --zip-dir work/zip
@@ -150,6 +165,7 @@ jobs:
           # 式を直接 bash に埋めない(ゲートの文面に引用符が入る)
           GATE: ${{ steps.pipeline.outputs.gate }}
           VIOLATIONS: ${{ steps.pipeline.outputs.violations }}
+          ARCHIVED: ${{ steps.archive.outcome }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
@@ -162,7 +178,11 @@ jobs:
           {
             echo "対象年月 **${YEAR_MONTH}** の取り込みが失敗しました（${REASON}）。"
             echo
-            echo "生zipの退避は品質ゲートより先に済ませているため、生データは失われていません。"
+            if [ "$ARCHIVED" = "success" ]; then
+              echo "生zipの退避は品質ゲートより先に済ませているため、生データは失われていません。"
+            else
+              echo "**生zipの退避（Release raw-${YEAR_MONTH}）まで到達していません。** JARTIC は最新1か月分しか配布しないので、次の公開前に手動で取得・退避してください。"
+            fi
             echo
             if [ -n "${VIOLATIONS:-}" ]; then
               echo "違反: ${VIOLATIONS}"
