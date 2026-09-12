@@ -1,54 +1,54 @@
 {
-  "target_month": "2026年06月",
-  "release_day": "2026年08月01日",
-  "year_month": "202606",
-  "generated_at": "2026-08-21T05:56:37.756736+00:00",
-  "rows_total": 4395720,
-  "features_total": 4389367,
+  "target_month": "2026年07月",
+  "release_day": "2026年09月01日",
+  "year_month": "202607",
+  "generated_at": "2026-09-12T05:48:29.964826+00:00",
+  "rows_total": 4394200,
+  "features_total": 4387840,
   "by_layer": {
     "stop": {
       "label": "一時停止",
-      "n": 1521191
+      "n": 1521249
     },
     "stopline": {
       "label": "停止線",
-      "n": 125833
+      "n": 125614
     },
     "signal": {
       "label": "信号機",
-      "n": 198976
+      "n": 198986
     },
     "crosswalk": {
       "label": "横断歩道",
-      "n": 1095097
+      "n": 1094679
     },
     "oneway": {
       "label": "一方通行",
-      "n": 112771
+      "n": 112793
     },
     "turn_restrict": {
       "label": "転回・右左折規制",
-      "n": 407692
+      "n": 407145
     },
     "speed": {
       "label": "最高速度・徐行",
-      "n": 195926
+      "n": 195980
     },
     "no_entry": {
       "label": "通行止め・通行禁止",
-      "n": 96063
+      "n": 97758
     },
     "parking": {
       "label": "駐車・停車",
-      "n": 302091
+      "n": 301619
     },
     "lane": {
       "label": "通行帯・中央線",
-      "n": 268393
+      "n": 268432
     },
     "bicycle": {
       "label": "自転車",
-      "n": 63304
+      "n": 63316
     },
     "priority": {
       "label": "優先道路",
@@ -56,7 +56,7 @@
     },
     "other": {
       "label": "その他",
-      "n": 1948
+      "n": 187
     }
   },
   "prefectures": [
@@ -109,15 +109,18 @@
     "9"
   ],
   "n_prefectures": 47,
-  "anomalies_total": 357583,
-  "pmtiles_mb": 567.4,
+  "anomalies_total": 357335,
+  "pmtiles_mb": 309.5,
+  "pmtiles_bytes": 309511436,
+  "pmtiles_sha256": "b87eb682269283b96c7fda2d711848861e060c65d928d2f0addcfb7b0d50024a",
   "pmtiles_in_repo": false,
-  "pmtiles_url": "https://shi-works.com/pmtiles/jartic-traffic-regulation-converter/202606/regulation.pmtiles",
-  "pmtiles_latest_url": "https://shi-works.com/pmtiles/jartic-traffic-regulation-converter/regulation.pmtiles",
-  "pmtiles_bytes": 567408721,
+  "pmtiles_url": "https://shi-works.com/pmtiles/jartic-traffic-regulation-converter/202607/regulation.pmtiles",
   "tiles": {
-    "min_zoom": 0,
+    "min_zoom": 9,
     "max_zoom": 14,
-    "max_tile_bytes": 0
-  }
+    "max_tile_bytes": 0,
+    "n_layers": 13,
+    "tippecanoe_version": "2.80.0"
+  },
+  "pmtiles_latest_url": "https://shi-works.com/pmtiles/jartic-traffic-regulation-converter/regulation.pmtiles"
 }
