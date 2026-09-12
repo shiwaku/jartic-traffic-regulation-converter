@@ -27,6 +27,7 @@ jobs:
     outputs:
       has_new: ${{ steps.check.outputs.has_new }}
       year_month: ${{ steps.check.outputs.year_month }}
+      r2_ready: ${{ steps.r2.outputs.ready }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -42,9 +43,34 @@ jobs:
           set -e
           if [ "$code" != "0" ] && [ "$code" != "10" ]; then exit $code; fi
 
+      # R2 の鍵が無いまま update へ進むと、320MB を落として8分かけてタイルを
+      # 焼いたあと publish で落ちる。要るのに無ければ update ごと見送る。
+      # publish だけ飛ばす手は採らない。dataset.json が存在しない URL を指した
+      # まま commit され、ビューワが壊れるため。前回が R2 配信(pmtiles_in_repo
+      # = false)なら、今回も repo には収まらないと見なす。
+      - id: r2
+        env:
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          needs_r2=$(python3 -c "import json; d=json.load(open('data/dataset.json', encoding='utf-8')); print('false' if d.get('pmtiles_in_repo') else 'true')")
+          have_ep=false
+          if [ -n "${R2_ENDPOINT:-}" ] || [ -n "${R2_ACCOUNT_ID:-}" ]; then have_ep=true; fi
+          have_key=false
+          if [ -n "${R2_ACCESS_KEY_ID:-}" ] && [ -n "${R2_SECRET_ACCESS_KEY:-}" ]; then have_key=true; fi
+          if [ "$needs_r2" = "false" ] || { [ "$have_ep" = true ] && [ "$have_key" = true ]; }; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=R2 未設定::R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY が未登録のため、今回の取り込みを見送りました。配信中の dataset.json は前月のままです。"
+          fi
+
   update:
     needs: check
-    if: needs.check.outputs.has_new == 'true' || inputs.force
+    if: (needs.check.outputs.has_new == 'true' || inputs.force) && needs.check.outputs.r2_ready == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
@@ -137,6 +163,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
         run: python3 src/publish_r2.py
 
       # 公開が済んだあとで data/ を commit する。この順序が
